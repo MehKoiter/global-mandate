@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Redis Utilities
+// Global Mandate — Redis Utilities
 // Covers: Travel Queue, Build Queue, Battle Timers, Resource Ticks
 // Uses: ioredis
 // =============================================================

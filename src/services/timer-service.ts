@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Timer Service
+// Global Mandate — Timer Service
 // Runs as a standalone Node.js process.
 // Polls Redis queues every 5 seconds and dispatches events.
 // =============================================================
@@ -30,32 +30,18 @@ type DbUnit = {
 };
 
 const prisma = new PrismaClient();
-const POLL_INTERVAL_MS = 5_000;
-
-// ─────────────────────────────────────────────
-// Main poll loop
-// ─────────────────────────────────────────────
-
-async function tick(): Promise<void> {
-  const now = Date.now();
-  await Promise.all([
-    processArrivals(now),
-    processBuildCompletions(now),
-    processBattleRounds(now),
-    processResourceTick(),   // runs on its own internal timer
-  ]);
-}
 
 // ─────────────────────────────────────────────
 // Movement Arrivals
 // ─────────────────────────────────────────────
 
-async function processArrivals(now: number): Promise<void> {
+export async function processDueArrivals(now: number): Promise<void> {
   const due = await dequeueDueArrivals(now);
   for (const entry of due) {
     await handleArrival(entry);
   }
 }
+
 
 async function handleArrival(entry: TravelQueueEntry): Promise<void> {
   const { movementId, unitId, ownerId, destinationZoneId } = entry;
@@ -70,7 +56,7 @@ async function handleArrival(entry: TravelQueueEntry): Promise<void> {
 
   // Finalise movement in DB
   await prisma.$transaction([
-    prisma.movement.update({ where: { id: movementId }, data: { isCancelled: false } }),
+    prisma.movement.update({ where: { id: movementId }, data: { arrivedAt: new Date() } }),
     prisma.unit.update({
       where: { id: unitId },
       data: { currentZoneId: destinationZoneId, status: "IDLE" },
@@ -146,7 +132,7 @@ async function initiateBattle(
 // Battle Round Resolution
 // ─────────────────────────────────────────────
 
-async function processBattleRounds(now: number): Promise<void> {
+export async function processBattleRounds(now: number): Promise<void> {
   const dueBattleIds = await dequeueDueBattleRounds(now);
   for (const battleId of dueBattleIds) {
     await resolveNextRound(battleId);
@@ -346,7 +332,7 @@ async function resolveBattle(
 // Build Completions
 // ─────────────────────────────────────────────
 
-async function processBuildCompletions(now: number): Promise<void> {
+export async function processBuildCompletions(now: number): Promise<void> {
   const due = await dequeueDueBuilds(now);
   for (const entry of due) {
     await handleBuildComplete(entry);
@@ -382,7 +368,7 @@ async function handleBuildComplete(entry: BuildQueueEntry): Promise<void> {
 let lastResourceTick = Date.now();
 const RESOURCE_TICK_MS = 60_000;
 
-async function processResourceTick(): Promise<void> {
+export async function processResourceTick(): Promise<void> {
   const now = Date.now();
   if (now - lastResourceTick < RESOURCE_TICK_MS) return;
   lastResourceTick = now;
@@ -441,19 +427,3 @@ async function processResourceTick(): Promise<void> {
   );
 }
 
-// ─────────────────────────────────────────────
-// Bootstrap
-// ─────────────────────────────────────────────
-
-async function main(): Promise<void> {
-  console.log("Timer service started — polling every 5s");
-  setInterval(async () => {
-    try {
-      await tick();
-    } catch (err) {
-      console.error("Timer tick error:", err);
-    }
-  }, POLL_INTERVAL_MS);
-}
-
-main().catch(console.error);

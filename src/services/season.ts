@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Season & Victory Engine
+// Global Mandate — Season & Victory Engine
 // Covers: Season lifecycle, sector control tracking,
 //         victory condition (60% map control), season wipe,
 //         Hall of Fame persistence, rewards
@@ -161,21 +161,6 @@ export async function checkVictoryCondition(): Promise<void> {
   }
 
   // ── Alliance combined victory check ──
-  // Sum zones owned by all members of each alliance
-  const alliances = await prisma.alliance.findMany({
-    include: {
-      members: {
-        include: {
-          player: {
-            include: {
-              _count: { select: { units: false } },  // can't groupBy here — raw query needed
-            },
-          },
-        },
-      },
-    },
-  });
-
   // Build alliance → zone count map via raw aggregation
   const allianceZoneCounts = await prisma.$queryRaw<{ allianceId: string; zoneCount: bigint }[]>`
     SELECT am."allianceId", COUNT(z.id)::bigint AS "zoneCount"
@@ -358,7 +343,7 @@ export async function endSeason(season: SeasonState): Promise<void> {
   for (let i = 0; i < finalLB.length; i++) {
     const entry  = finalLB[i];
     const reward = getRewardForRank(i + 1);
-    if (!reward) continue;
+    if (!entry || !reward) continue;
 
     await prisma.player.update({
       where: { id: entry.playerId },
@@ -443,8 +428,9 @@ async function executeWorldWipe(oldSeasonId: string): Promise<void> {
   ];
   await redis.del(...keysToFlush);
 
-  // Start next season
-  const seasonNumber = parseInt(oldSeasonId.replace("s", "").slice(0, 4)) + 1;
+  // Start next season — count distinct past seasons from Hall of Fame
+  const pastSeasons = await prisma.hallOfFame.groupBy({ by: ["seasonId"] });
+  const seasonNumber = pastSeasons.length + 1;
   await startNewSeason(`Season ${seasonNumber}`);
 
   await broadcastGlobalEvent("NEW_SEASON_STARTED", {
@@ -537,8 +523,8 @@ export async function updateControlCache(seasonId: string): Promise<void> {
   for (const zone of zones) {
     if (!zone.ownerPlayerId) continue;
     if (!sectorControl[zone.sectorId]) sectorControl[zone.sectorId] = {};
-    sectorControl[zone.sectorId][zone.ownerPlayerId] =
-      (sectorControl[zone.sectorId][zone.ownerPlayerId] ?? 0) + 1;
+    const sectorMap = sectorControl[zone.sectorId]!;
+    sectorMap[zone.ownerPlayerId] = (sectorMap[zone.ownerPlayerId] ?? 0) + 1;
   }
 
   await redis.set(
@@ -562,7 +548,8 @@ export async function getControlCache(
 function getRewardForRank(rank: number): SeasonReward | null {
   // Walk backwards through tier thresholds
   for (let i = RANK_REWARDS.length - 1; i >= 0; i--) {
-    if (rank <= RANK_REWARDS[i].rank) return RANK_REWARDS[i];
+    const reward = RANK_REWARDS[i];
+    if (reward && rank <= reward.rank) return reward;
   }
   return null;
 }

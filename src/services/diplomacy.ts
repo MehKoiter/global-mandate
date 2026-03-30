@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Diplomacy System
+// Global Mandate — Diplomacy System
 // Covers: Non-Aggression Pacts, Tribute, Trade Agreements,
 //         Cease-Fires, Espionage (Intel ops)
 // =============================================================

@@ -5,3 +5,289 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ──────────────────────────────────────────────
+// Layer 1 — Players
+// ──────────────────────────────────────────────
+
+model Player {
+  id                String   @id @default(uuid())
+  username          String   @unique
+  email             String   @unique
+  passwordHash      String
+  fuel              Int      @default(500)
+  rations           Int      @default(500)
+  steel             Int      @default(500)
+  credits           Int      @default(1000)
+  maxCommandPoints  Int      @default(20)
+  usedCommandPoints Int      @default(0)
+  lastActiveAt      DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  fob               FOB?
+  units             Unit[]
+  allianceMember    AllianceMember?
+  zonesOwned        Zone[]    @relation("ZoneOwner")
+  battlesAsAttacker Battle[]  @relation("BattleAttacker")
+  battlesAsDefender Battle[]  @relation("BattleDefender")
+  hallOfFame        HallOfFame[]
+}
+
+// ──────────────────────────────────────────────
+// Layer 2 — Sectors & Zones
+// ──────────────────────────────────────────────
+
+model Sector {
+  id    String @id @default(uuid())
+  name  String
+  q     Int
+  r     Int
+
+  zones Zone[]
+
+  @@unique([q, r])
+}
+
+model Zone {
+  id                  String    @id @default(uuid())
+  name                String
+  sectorId            String
+  q                   Int
+  r                   Int
+  ownerPlayerId       String?
+  capturedAt          DateTime?
+  consolidationEndsAt DateTime?
+  fortificationLevel  Int       @default(0)
+  wallBonus           Int       @default(0)
+  fuelPerHour         Int       @default(0)
+  rationsPerHour      Int       @default(0)
+  steelPerHour        Int       @default(0)
+  creditsPerHour      Int       @default(0)
+  hasRoad             Boolean   @default(false)
+  bridgeDestroyed     Boolean   @default(false)
+
+  sector           Sector     @relation(fields: [sectorId], references: [id])
+  owner            Player?    @relation("ZoneOwner", fields: [ownerPlayerId], references: [id])
+  units            Unit[]
+  battles          Battle[]
+  inboundMovements Movement[] @relation("MovementDestination")
+
+  @@index([ownerPlayerId])
+  @@index([sectorId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 3 — FOB & Buildings
+// ──────────────────────────────────────────────
+
+model FOB {
+  id       String @id @default(uuid())
+  playerId String @unique
+  zoneId   String @unique
+
+  player    Player     @relation(fields: [playerId], references: [id])
+  buildings Building[]
+}
+
+model Building {
+  id            String    @id @default(uuid())
+  fobId         String
+  buildingType  String
+  level         Int       @default(1)
+  isUpgrading   Boolean   @default(false)
+  upgradeEndsAt DateTime?
+
+  fob FOB @relation(fields: [fobId], references: [id])
+
+  @@unique([fobId, buildingType])
+  @@index([fobId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 4 — Units
+// ──────────────────────────────────────────────
+
+model Unit {
+  id            String  @id @default(uuid())
+  ownerId       String
+  unitType      String
+  quantity      Int     @default(1)
+  healthPct     Float   @default(100)
+  morale        Float   @default(1.0)
+  currentZoneId String?
+  status        String  @default("IDLE") // IDLE | MOVING | IN_BATTLE | GARRISONING | TRAINING
+
+  owner       Player     @relation(fields: [ownerId], references: [id])
+  currentZone Zone?      @relation(fields: [currentZoneId], references: [id])
+  movements   Movement[]
+
+  @@index([ownerId])
+  @@index([currentZoneId, status])
+}
+
+// ──────────────────────────────────────────────
+// Layer 5 — Movement Queue
+// ──────────────────────────────────────────────
+
+model Movement {
+  id                String    @id @default(uuid())
+  unitId            String
+  ownerId           String
+  originZoneId      String
+  destinationZoneId String
+  departedAt        DateTime  @default(now())
+  arrivalAt         DateTime
+  isCancelled       Boolean   @default(false)
+  arrivedAt         DateTime?
+
+  unit            Unit   @relation(fields: [unitId], references: [id])
+  destinationZone Zone   @relation("MovementDestination", fields: [destinationZoneId], references: [id])
+
+  @@index([unitId])
+  @@index([destinationZoneId])
+  @@index([ownerId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 6 — Scouting
+// ──────────────────────────────────────────────
+
+model ScoutReport {
+  id           String   @id @default(uuid())
+  scouterId    String
+  targetZoneId String
+  reportedAt   DateTime @default(now())
+  unitSnapshot Json
+  expiresAt    DateTime
+
+  @@index([scouterId])
+  @@index([targetZoneId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 7 — Combat & Battle Reports
+// ──────────────────────────────────────────────
+
+model Battle {
+  id               String    @id @default(uuid())
+  zoneId           String
+  attackerPlayerId String
+  defenderPlayerId String?
+  outcome          String?   // ATTACKER_VICTORY | DEFENDER_VICTORY | DRAW
+  resolvedAt       DateTime?
+  zoneCaptured     Boolean   @default(false)
+  fuelSpoils       Int       @default(0)
+  steelSpoils      Int       @default(0)
+  rationsSpoils    Int       @default(0)
+  creditsSpoils    Int       @default(0)
+  createdAt        DateTime  @default(now())
+
+  zone     Zone          @relation(fields: [zoneId], references: [id])
+  attacker Player        @relation("BattleAttacker", fields: [attackerPlayerId], references: [id])
+  defender Player?       @relation("BattleDefender", fields: [defenderPlayerId], references: [id])
+  rounds   BattleRound[]
+
+  @@index([zoneId])
+  @@index([attackerPlayerId])
+  @@index([outcome])
+}
+
+model BattleRound {
+  id                  String   @id @default(uuid())
+  battleId            String
+  roundNumber         Int
+  attackerDamageDealt Int
+  defenderDamageDealt Int
+  attackerLosses      Json
+  defenderLosses      Json
+  attackerMoraleEnd   Float
+  defenderMoraleEnd   Float
+  resolvedAt          DateTime @default(now())
+
+  battle Battle @relation(fields: [battleId], references: [id])
+
+  @@index([battleId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 8 — Resource Transactions
+// ──────────────────────────────────────────────
+
+model ResourceTransaction {
+  id        String   @id @default(uuid())
+  playerId  String
+  type      String   // PRODUCTION | TRIBUTE | SPOILS | TRADE | REWARD
+  fuel      Int      @default(0)
+  rations   Int      @default(0)
+  steel     Int      @default(0)
+  credits   Int      @default(0)
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([playerId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 9 — Alliances
+// ──────────────────────────────────────────────
+
+model Alliance {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  tag       String   @unique
+  leaderId  String
+  createdAt DateTime @default(now())
+
+  members AllianceMember[]
+}
+
+model AllianceMember {
+  id         String   @id @default(uuid())
+  allianceId String
+  playerId   String   @unique
+  role       String   @default("MEMBER") // LEADER | OFFICER | MEMBER
+  joinedAt   DateTime @default(now())
+
+  alliance Alliance @relation(fields: [allianceId], references: [id])
+  player   Player   @relation(fields: [playerId], references: [id])
+
+  @@index([allianceId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 10 — Notifications
+// ──────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  playerId  String
+  type      String
+  payload   Json
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([playerId, isRead])
+}
+
+// ──────────────────────────────────────────────
+// Layer 11 — Hall of Fame
+// ──────────────────────────────────────────────
+
+model HallOfFame {
+  id          String   @id @default(uuid())
+  seasonId    String
+  seasonName  String
+  rank        Int
+  playerId    String
+  playerName  String
+  allianceTag String?
+  zonesOwned  Int
+  battlesWon  Int
+  endedAt     DateTime
+  isWinner    Boolean  @default(false)
+
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@index([seasonId])
+  @@index([playerId])
+}

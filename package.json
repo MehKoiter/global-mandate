@@ -1,9 +1,11 @@
 {
-  "name": "modern-combat-4x",
+  "name": "global-mandate",
   "version": "1.0.0",
-  "description": "",
+  "description": "Global Mandate — multiplayer 4X strategy game server",
   "main": "index.js",
   "scripts": {
+    "build": "tsc",
+    "start": "node dist/services/timer-master.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,7 +15,6 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.6.0",
-    "@types/ioredis": "^4.28.10",
     "@types/node": "^25.5.0",
     "dotenv": "^17.3.1",
     "ioredis": "^5.10.1",

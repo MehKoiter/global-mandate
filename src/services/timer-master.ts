@@ -1,10 +1,10 @@
 // =============================================================
-// Modern Combat 4X — Master Timer Service (updated)
+// Global Mandate — Master Timer Service
 // Integrates: combat, alliance, diplomacy, season
 // =============================================================
 
-import { processDueArrivals, processBuildCompletions, processBattleRounds }
-  from "./timer-service.js";   // original handlers
+import { processDueArrivals, processBuildCompletions, processBattleRounds, processResourceTick }
+  from "./timer-service.js";
 import { processDueCoordinatedAttacks } from "./alliance.js";
 import { processDueTributes, processDueEspionageOps } from "./diplomacy.js";
 import {
@@ -48,6 +48,7 @@ async function slowTick(): Promise<void> {
     checkVictoryCondition(),
     checkVictoryCountdownExpiry(),
     updateControlCache(season.seasonId),
+    processResourceTick(),
   ]);
 }
 

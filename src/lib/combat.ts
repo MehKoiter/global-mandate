@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Unit Stats & Combat Engine
+// Global Mandate — Unit Stats & Combat Engine
 // =============================================================
 
 // ─────────────────────────────────────────────
@@ -420,8 +420,8 @@ export function resolveBattleRound(params: {
   const finalAtk = degradeMorale(newAtk, Object.keys(atkLosses).length > 0);
   const finalDef = degradeMorale(newDef, Object.keys(defLosses).length > 0);
 
-  const atkMorale = finalAtk.length > 0 ? finalAtk[0].morale : 0;
-  const defMorale = finalDef.length > 0 ? finalDef[0].morale : 0;
+  const atkMorale = finalAtk[0]?.morale ?? 0;
+  const defMorale = finalDef[0]?.morale ?? 0;
 
   const attackerWins = finalDef.length === 0;
   const defenderWins = finalAtk.length === 0;
@@ -445,8 +445,6 @@ export function resolveBattleRound(params: {
 // ─────────────────────────────────────────────
 // Travel Time Calculator
 // ─────────────────────────────────────────────
-
-const SECTOR_DISTANCE_KM = 80; // approximate km per sector crossing
 
 export function calcTravelTimeMs(
   unitType: UnitType,

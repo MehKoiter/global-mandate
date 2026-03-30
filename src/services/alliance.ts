@@ -1,5 +1,5 @@
 // =============================================================
-// Modern Combat 4X — Alliance System
+// Global Mandate — Alliance System
 // Covers: Alliance CRUD, shared CP pool, coordinated attacks,
 //         alliance war declarations, member permissions
 // =============================================================
