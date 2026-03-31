@@ -18,7 +18,8 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "build": "tsc",
-    "dev": "tsx watch src/server.ts",
+    "dev": "node scripts/dev.js",
+    "dev:server": "tsx watch src/server.ts",
     "seed": "tsx src/scripts/seed-world.ts"
   },
   "dependencies": {
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "concurrently": "^9.2.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
