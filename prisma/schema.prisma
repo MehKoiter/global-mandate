@@ -7,6 +7,30 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────
+
+enum BuildingType {
+  COMMAND_CENTER
+  COMM_CENTER
+  WAREHOUSE
+  TOC
+  LIGHT_VEHICLE_SHOP
+  HEAVY_FACTORY
+  RADIO_TOWER
+  BUNKER
+  HYDRO_BAY
+}
+
+enum SquadStatus {
+  STAGING
+  DEPLOYED
+  IN_COMBAT
+  RETREATING
+  RETURNING
+}
+
+// ──────────────────────────────────────────────
 // Layer 1 — Players
 // ──────────────────────────────────────────────
 
@@ -24,8 +48,21 @@ model Player {
   lastActiveAt      DateTime @default(now())
   createdAt         DateTime @default(now())
 
+  // Tutorial
+  tutorialStep              Int       @default(0)
+  tutorialComplete          Boolean   @default(false)
+  newPlayerProtectionEndsAt DateTime?
+
+  // Lazy evaluation — cached net resource flow, recalculated on change
+  lastResourceCalculatedAt DateTime @default(now())
+  fuelNetPerHour           Float    @default(0)
+  rationsNetPerHour        Float    @default(0)
+  steelNetPerHour          Float    @default(0)
+  creditsNetPerHour        Float    @default(0)
+
   fob               FOB?
   units             Unit[]
+  squads            Squad[]
   allianceMember    AllianceMember?
   zonesOwned        Zone[]    @relation("ZoneOwner")
   battlesAsAttacker Battle[]  @relation("BattleAttacker")
@@ -66,11 +103,17 @@ model Zone {
   hasRoad             Boolean   @default(false)
   bridgeDestroyed     Boolean   @default(false)
 
-  sector           Sector     @relation(fields: [sectorId], references: [id])
-  owner            Player?    @relation("ZoneOwner", fields: [ownerPlayerId], references: [id])
+  // Signal Chain — broken chain yields 50% resources
+  isConnected        Boolean @default(true)
+  signalSourceZoneId String?
+
+  sector           Sector       @relation(fields: [sectorId], references: [id])
+  owner            Player?      @relation("ZoneOwner", fields: [ownerPlayerId], references: [id])
   units            Unit[]
+  squads           Squad[]
+  bunkerSlots      BunkerSlot[]
   battles          Battle[]
-  inboundMovements Movement[] @relation("MovementDestination")
+  inboundMovements Movement[]   @relation("MovementDestination")
 
   @@index([ownerPlayerId])
   @@index([sectorId])
@@ -87,15 +130,18 @@ model FOB {
 
   player    Player     @relation(fields: [playerId], references: [id])
   buildings Building[]
+  squads    Squad[]
 }
 
 model Building {
-  id            String    @id @default(uuid())
-  fobId         String
-  buildingType  String
-  level         Int       @default(1)
-  isUpgrading   Boolean   @default(false)
-  upgradeEndsAt DateTime?
+  id                     String       @id @default(uuid())
+  fobId                  String
+  buildingType           BuildingType
+  level                  Int          @default(1)
+  isUpgrading            Boolean      @default(false)
+  upgradeEndsAt          DateTime?
+  isOperational          Boolean      @default(true)
+  maintenanceFuelPerHour Int          @default(0)
 
   fob FOB @relation(fields: [fobId], references: [id])
 
@@ -116,13 +162,58 @@ model Unit {
   morale        Float   @default(1.0)
   currentZoneId String?
   status        String  @default("IDLE") // IDLE | MOVING | IN_BATTLE | GARRISONING | TRAINING
+  cargoCapacity Int     @default(0)
+  cargoUsed     Int     @default(0)
 
-  owner       Player     @relation(fields: [ownerId], references: [id])
-  currentZone Zone?      @relation(fields: [currentZoneId], references: [id])
+  owner       Player      @relation(fields: [ownerId], references: [id])
+  currentZone Zone?       @relation(fields: [currentZoneId], references: [id])
   movements   Movement[]
+  bunkerSlot  BunkerSlot?
 
   @@index([ownerId])
   @@index([currentZoneId, status])
+}
+
+// ──────────────────────────────────────────────
+// Layer 4b — Squads
+// A named group of units deployed from a FOB with its own resource reserves.
+// ──────────────────────────────────────────────
+
+model Squad {
+  id            String      @id @default(uuid())
+  name          String
+  fobId         String
+  ownerId       String
+  currentZoneId String?
+  status        SquadStatus @default(STAGING)
+  rationsHeld   Int         @default(0)
+  fuelHeld      Int         @default(0)
+  createdAt     DateTime    @default(now())
+
+  fob         FOB     @relation(fields: [fobId], references: [id])
+  owner       Player  @relation(fields: [ownerId], references: [id])
+  currentZone Zone?   @relation(fields: [currentZoneId], references: [id])
+
+  @@index([ownerId])
+  @@index([fobId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 4c — Bunker Slots
+// Tracks units currently sheltered in a bunker.
+// shelterPriority mirrors the unit's CP cost — higher CP = higher priority.
+// ──────────────────────────────────────────────
+
+model BunkerSlot {
+  id              String @id @default(uuid())
+  unitId          String @unique
+  zoneId          String
+  shelterPriority Int    @default(0)
+
+  unit Unit @relation(fields: [unitId], references: [id])
+  zone Zone @relation(fields: [zoneId], references: [id])
+
+  @@index([zoneId])
 }
 
 // ──────────────────────────────────────────────
@@ -186,6 +277,7 @@ model Battle {
   attacker Player        @relation("BattleAttacker", fields: [attackerPlayerId], references: [id])
   defender Player?       @relation("BattleDefender", fields: [defenderPlayerId], references: [id])
   rounds   BattleRound[]
+  raidLog  RaidLog?
 
   @@index([zoneId])
   @@index([attackerPlayerId])
@@ -207,6 +299,31 @@ model BattleRound {
   battle Battle @relation(fields: [battleId], references: [id])
 
   @@index([battleId])
+}
+
+// ──────────────────────────────────────────────
+// Layer 7b — Raid Log
+// Records resource siphoning outcome for siphon-raid battle type.
+// One log per battle (battleId is unique).
+// ──────────────────────────────────────────────
+
+model RaidLog {
+  id                String   @id @default(uuid())
+  battleId          String   @unique
+  attackerPlayerId  String
+  defenderPlayerId  String
+  steelSiphoned     Int      @default(0)
+  fuelSiphoned      Int      @default(0)
+  rationsSiphoned   Int      @default(0)
+  creditsSiphoned   Int      @default(0)
+  cargoCapacityUsed Int      @default(0)
+  survivalFloor     Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  battle Battle @relation(fields: [battleId], references: [id])
+
+  @@index([attackerPlayerId])
+  @@index([defenderPlayerId])
 }
 
 // ──────────────────────────────────────────────
