@@ -5,11 +5,9 @@
 // =============================================================
 
 import type { FastifyInstance } from "fastify";
-import { PrismaClient }         from "@prisma/client";
+import { prisma }               from "../lib/prisma.js";
 import { redis }                from "../lib/redis.js";
 import { calculateResources }   from "../lib/resources.js";
-
-const prisma = new PrismaClient();
 
 const squadUnitsKey = (squadId: string) => `squad:${squadId}:units`;
 

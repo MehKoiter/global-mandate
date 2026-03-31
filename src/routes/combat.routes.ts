@@ -5,9 +5,7 @@
 // =============================================================
 
 import type { FastifyInstance } from "fastify";
-import { PrismaClient }         from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma }               from "../lib/prisma.js";
 
 export async function combatRoutes(fastify: FastifyInstance) {
   // GET /api/v1/battles/active — battles in progress for this player

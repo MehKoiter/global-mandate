@@ -11,11 +11,10 @@
 // building upgraded, or a trade agreement accepted/expired.
 // =============================================================
 
-import { PrismaClient, BuildingType } from "@prisma/client";
+import { BuildingType } from "@prisma/client";
+import { prisma } from "./prisma.js";
 import { redis } from "./redis.js";
 import { UNIT_STATS, type UnitType } from "./combat.js";
-
-const prisma = new PrismaClient();
 
 // The trade agreement boost key — mirrors diplomacy.ts's DiplomacyKeys.tradeBoost.
 // Read directly from Redis here to avoid a lib → services import dependency.

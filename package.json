@@ -16,16 +16,16 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "start": "tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/services/timer-master.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
-    "@fastify/cors": "^8.5.0",
-    "@fastify/helmet": "^11.1.1",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^10.0.0",
-    "@fastify/rate-limit": "^9.1.0",
-    "@fastify/websocket": "^8.3.1",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/websocket": "^11.2.0",
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.6.0",
     "@types/bcrypt": "^5.0.2",
@@ -44,6 +44,7 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
 }

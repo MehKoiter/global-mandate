@@ -4,7 +4,7 @@
 // Polls Redis queues every 5 seconds and dispatches events.
 // =============================================================
 
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../lib/prisma.js";
 import {
   dequeueDueArrivals,
   dequeueDueBuilds,
@@ -29,7 +29,6 @@ type DbUnit = {
   ownerId: string;
 };
 
-const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
 // Movement Arrivals

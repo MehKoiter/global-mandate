@@ -4,11 +4,9 @@
 // =============================================================
 
 import type { FastifyInstance } from "fastify";
-import { PrismaClient }         from "@prisma/client";
+import { prisma }               from "../lib/prisma.js";
 import * as crypto              from "crypto";
 import { calculateResources }   from "../lib/resources.js";
-
-const prisma = new PrismaClient();
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -24,10 +22,10 @@ function verifyPassword(password: string, stored: string): boolean {
 }
 
 export async function playerRoutes(fastify: FastifyInstance) {
-  // POST /api/v1/register
+  // POST /api/v1/player/register
   fastify.post<{
     Body: { username: string; email: string; password: string };
-  }>("/register", async (req, reply) => {
+  }>("/player/register", async (req, reply) => {
     const { username, email, password } = req.body;
 
     if (!username || !email || !password) {
@@ -54,10 +52,10 @@ export async function playerRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ player, token });
   });
 
-  // POST /api/v1/login
+  // POST /api/v1/player/login
   fastify.post<{
     Body: { email: string; password: string };
-  }>("/login", async (req, reply) => {
+  }>("/player/login", async (req, reply) => {
     const { email, password } = req.body;
 
     if (!email || !password) {

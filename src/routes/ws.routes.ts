@@ -12,9 +12,7 @@
 import type { FastifyInstance }  from "fastify";
 import type { SocketStream }     from "@fastify/websocket";
 import { Redis }                 from "ioredis";
-import { PrismaClient }          from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma }                from "../lib/prisma.js";
 
 export async function wsRoutes(fastify: FastifyInstance) {
   fastify.get("/ws", { websocket: true }, async (connection: SocketStream, req) => {

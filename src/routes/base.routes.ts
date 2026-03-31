@@ -4,11 +4,10 @@
 // =============================================================
 
 import type { FastifyInstance } from "fastify";
-import { PrismaClient, BuildingType } from "@prisma/client";
+import { BuildingType }               from "@prisma/client";
+import { prisma }                     from "../lib/prisma.js";
 import { calculateResources }         from "../lib/resources.js";
 import { recalculateNetFlow }         from "../lib/netflow.js";
-
-const prisma = new PrismaClient();
 
 // Upgrade costs per building level (indexed by current level → cost to reach next)
 const UPGRADE_COST: Record<BuildingType, { steel: number; credits: number; fuel: number }> = {

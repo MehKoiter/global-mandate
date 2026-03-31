@@ -5,10 +5,8 @@
 //         Hall of Fame persistence, rewards
 // =============================================================
 
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../lib/prisma.js";
 import { redis, publishPlayerEvent } from "../lib/redis.js";
-
-const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
 // Constants

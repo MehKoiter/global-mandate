@@ -8,11 +8,10 @@
 // that reads or modifies player resources.
 // =============================================================
 
-import { PrismaClient, BuildingType } from "@prisma/client";
+import { BuildingType } from "@prisma/client";
+import { prisma } from "./prisma.js";
 import { redis } from "./redis.js";
 import { UNIT_STATS, type UnitType } from "./combat.js";
-
-const prisma = new PrismaClient();
 
 // ─────────────────────────────────────────────
 // Constants
