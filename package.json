@@ -18,7 +18,8 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "build": "tsc",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "seed": "tsx src/scripts/seed-world.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

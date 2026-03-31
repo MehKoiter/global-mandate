@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma }               from "../lib/prisma.js";
 import * as crypto              from "crypto";
 import { calculateResources }   from "../lib/resources.js";
+import { recalculateNetFlow }   from "../lib/netflow.js";
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -43,10 +44,48 @@ export async function playerRoutes(fastify: FastifyInstance) {
       return reply.status(409).send({ error: "Username or email already taken" });
     }
 
-    const player = await prisma.player.create({
-      data: { username, email, passwordHash: hashPassword(password) },
-      select: { id: true, username: true, createdAt: true },
+    // Grab the first sector to anchor the FOB zone (world must be seeded)
+    const sector = await prisma.sector.findFirst({ select: { id: true } });
+    if (!sector) {
+      return reply.status(503).send({ error: "World not initialised. Run npm run seed first." });
+    }
+
+    const { player } = await prisma.$transaction(async (tx) => {
+      const p = await tx.player.create({
+        data: { username, email, passwordHash: hashPassword(password) },
+        select: { id: true, username: true, createdAt: true },
+      });
+
+      const zone = await tx.zone.create({
+        data: {
+          name:          `${username}'s Command Post`,
+          sectorId:      sector.id,
+          q:             0,
+          r:             0,
+          ownerPlayerId: p.id,
+          capturedAt:    new Date(),
+        },
+      });
+
+      await tx.fOB.create({
+        data: {
+          playerId: p.id,
+          zoneId:   zone.id,
+          buildings: {
+            create: [
+              { buildingType: "COMMAND_CENTER" },
+              { buildingType: "COMM_CENTER"    },
+              { buildingType: "WAREHOUSE"      },
+              { buildingType: "HYDRO_BAY"      },
+            ],
+          },
+        },
+      });
+
+      return { player: p };
     });
+
+    await recalculateNetFlow(player.id);
 
     const token = fastify.jwt.sign({ playerId: player.id });
     return reply.status(201).send({ player, token });

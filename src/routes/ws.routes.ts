@@ -9,14 +9,14 @@
 // All Redis pub/sub messages are forwarded to the client as-is.
 // =============================================================
 
-import type { FastifyInstance }  from "fastify";
-import type { SocketStream }     from "@fastify/websocket";
-import { Redis }                 from "ioredis";
-import { prisma }                from "../lib/prisma.js";
+import type { FastifyInstance } from "fastify";
+import type { WebSocket }       from "ws";
+import { Redis }                from "ioredis";
+import { prisma }               from "../lib/prisma.js";
 
 export async function wsRoutes(fastify: FastifyInstance) {
-  fastify.get("/ws", { websocket: true }, async (connection: SocketStream, req) => {
-    const ws = connection.socket;
+  fastify.get("/ws", { websocket: true }, async (socket: WebSocket, req) => {
+    const ws = socket;
 
     // ── Auth via query param ──────────────────────────────────
     const token = (req.query as Record<string, string>)["token"];

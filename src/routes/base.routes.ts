@@ -36,7 +36,9 @@ export async function baseRoutes(fastify: FastifyInstance) {
       include: { buildings: true },
     });
     if (!fob) {
-      return reply.status(404).send({ error: "FOB not found. Complete the tutorial to establish your base." });
+      return reply.status(404).send({
+        message: "No FOB found for this player. This should not happen — please re-register.",
+      });
     }
     return reply.send({ fob });
   });
