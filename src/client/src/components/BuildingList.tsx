@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { Building } from "../types.js";
 
 interface Props {
-  buildings:   Building[];
-  steel:       number;
-  credits:     number;
-  onUpgrade:   (buildingType: string) => Promise<void>;
-  onConstruct: (buildingType: string) => Promise<void>;
+  buildings:    Building[];
+  steel:        number;
+  credits:      number;
+  selectedId?:  string;
+  onSelect:     (b: Building) => void;
+  onConstruct:  (buildingType: string) => Promise<void>;
 }
 
 // Buildings that can be constructed (not given at start)
@@ -16,7 +17,7 @@ const CONSTRUCTABLE: { buildingType: string; steel: number; credits: number }[] 
 
 const BUILDING_LABELS: Record<string, string> = {
   COMMAND_CENTER:     "Command Center",
-  COMM_CENTER:        "Comm Center",
+  COMM_CENTER:        "Communications Center",
   WAREHOUSE:          "Warehouse",
   TOC:                "Tactical Operations Center",
   LIGHT_VEHICLE_SHOP: "Light Vehicle Shop",
@@ -25,6 +26,14 @@ const BUILDING_LABELS: Record<string, string> = {
   BUNKER:             "Bunker",
   HYDRO_BAY:          "Defense Logistics",
   BARRACKS:           "Barracks",
+};
+
+const BUILDING_ORDER: Record<string, number> = {
+  COMMAND_CENTER:     0,
+  BARRACKS:           1,
+  COMM_CENTER:        2,
+  HYDRO_BAY:          3,
+  WAREHOUSE:          4,
 };
 
 const BUILDING_ICONS: Record<string, string> = {
@@ -40,41 +49,15 @@ const BUILDING_ICONS: Record<string, string> = {
   BARRACKS:           "⚑",
 };
 
-// Client-side cost preview — mirrors src/lib/buildings.ts formula.
-// Enforcement is always server-side; this is display-only.
-const UPGRADE_BASE: Record<string, { steel: number; credits: number; maxLevel: number } | undefined> = {
-  COMMAND_CENTER: { steel: 500, credits: 800,  maxLevel: 10 },
-  COMM_CENTER:    { steel: 200, credits: 400,  maxLevel: 10 },
-  HYDRO_BAY:      { steel: 150, credits: 300,  maxLevel: 10 },
-  WAREHOUSE:      { steel: 100, credits: 200,  maxLevel: 10 },
-  BARRACKS:       { steel: 300, credits: 500,  maxLevel: 10 },
-};
-const MAX_LEVEL = 10; // fallback for any building not listed above
-
-function round50(n: number) { return Math.round(n / 50) * 50; }
-
-function upgradeCost(buildingType: string, currentLevel: number) {
-  const base = UPGRADE_BASE[buildingType];
-  if (!base || currentLevel >= base.maxLevel) return null;
-  const m = Math.pow(1.5, currentLevel);
-  const rawMins = 15 * Math.pow(1.25, currentLevel - 1);
-  const mins    = Math.round(rawMins);
-  return {
-    steel:   round50(base.steel   * m),
-    credits: round50(base.credits * m),
-    time:    mins >= 60
-      ? `${Math.floor(mins / 60)}h ${mins % 60 > 0 ? `${mins % 60}m` : ""}`.trim()
-      : `${mins}m`,
-  };
-}
-
 const S: Record<string, React.CSSProperties> = {
+  // ── Normal (grid) mode ──────────────────────────────────────
   section:       { padding: "16px 20px" },
   heading:       { color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, marginBottom: 12 },
   grid:          { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 },
   card: {
     background: "#111", border: "1px solid #222", borderRadius: 3,
     padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4,
+    cursor: "pointer",
   },
   cardUpgrading: { borderColor: "#f57c00" },
   cardOffline:   { borderColor: "#333", opacity: 0.6 },
@@ -85,90 +68,90 @@ const S: Record<string, React.CSSProperties> = {
   status:        { fontSize: 11, marginTop: 2 },
   timer:         { color: "#f57c00", fontSize: 11 },
   fuel:          { color: "#888", fontSize: 11 },
+  errMsg:        { color: "#f44336", fontSize: 10, marginTop: 2 },
+
+  // ── Collapsed (list) mode ───────────────────────────────────
+  listSection:   { padding: "12px 8px", display: "flex", flexDirection: "column", gap: 2 },
+  listHeading:   { color: "#555", fontSize: 10, textTransform: "uppercase", letterSpacing: 2, marginBottom: 8, paddingLeft: 8 },
+  listRow: {
+    display: "grid", gridTemplateColumns: "18px 1fr auto",
+    alignItems: "start", gap: "0 6px",
+    padding: "7px 8px", borderRadius: 2, cursor: "pointer",
+    border: "1px solid transparent",
+  },
+  listRowSelected: {
+    background: "#141f14", border: "1px solid #1a3a1a",
+  },
+  listIcon:      { fontSize: 13, color: "#666", textAlign: "center" as const, paddingTop: 1 },
+  listName:      { color: "#c8c8c8", fontSize: 12, lineHeight: 1.4 },
+  listMeta:      { display: "flex", alignItems: "center", gap: 4, paddingTop: 1 },
+  listLevel:     { color: "#555", fontSize: 10 },
+  listDot:       { fontSize: 9 },
+
+  // ── Construct button ────────────────────────────────────────
   upgradeBtn: {
     marginTop: 6, padding: "5px 8px", fontSize: 10, letterSpacing: 1,
     textTransform: "uppercase", fontFamily: "inherit", borderRadius: 2,
     cursor: "pointer", background: "#0d1f0d", border: "1px solid #1a3a1a",
-    color: "#4caf50", width: "100%", textAlign: "left",
+    color: "#4caf50", width: "100%", textAlign: "left" as const,
   },
   upgradeBtnDisabled: {
     background: "#111", border: "1px solid #1e1e1e",
     color: "#333", cursor: "not-allowed",
   },
-  costRow:   { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 },
+  costRow:   { display: "flex", gap: 8, flexWrap: "wrap" as const, marginTop: 2 },
   costChip:  { fontSize: 10, display: "flex", alignItems: "center", gap: 3 },
   costOk:    { color: "#c8c8c8" },
   costShort: { color: "#f44336" },
-  costTime:  { color: "#666", fontSize: 10 },
-  errMsg:      { color: "#f44336", fontSize: 10, marginTop: 2 },
 };
 
-function Countdown({ endsAt, label = "⬆ Upgrading" }: { endsAt: string; label?: string }) {
-  const [remaining, setRemaining] = useState("");
-
-  useEffect(() => {
-    function update() {
-      const diff = new Date(endsAt).getTime() - Date.now();
-      if (diff <= 0) { setRemaining("Completing..."); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const sec = Math.floor((diff % 60000) / 1000);
-      setRemaining(`${h}h ${m}m ${sec}s`);
-    }
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [endsAt]);
-
-  return <span style={S.timer}>{label}: {remaining}</span>;
-}
-
-export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct }: Props) {
-  const [upgrading,    setUpgrading]    = useState<string | null>(null);
+export function BuildingList({ buildings, steel, credits, selectedId, onSelect, onConstruct }: Props) {
   const [constructing, setConstructing] = useState<string | null>(null);
   const [errors,       setErrors]       = useState<Record<string, string>>({});
-  const [globalErr,    setGlobalErr]    = useState<string | null>(null);
 
-  const fobBusy = buildings.some(b => b.isUpgrading) || upgrading !== null;
+  const sorted = [...buildings].sort((a, b) => {
+    const oa = BUILDING_ORDER[a.buildingType] ?? 99;
+    const ob = BUILDING_ORDER[b.buildingType] ?? 99;
+    if (oa !== ob) return oa - ob;
+    return (BUILDING_LABELS[a.buildingType] ?? a.buildingType)
+      .localeCompare(BUILDING_LABELS[b.buildingType] ?? b.buildingType);
+  });
 
-  const sorted = [...buildings].sort((a, b) =>
-    (BUILDING_LABELS[a.buildingType] ?? a.buildingType)
-      .localeCompare(BUILDING_LABELS[b.buildingType] ?? b.buildingType),
-  );
+  const collapsed = selectedId !== undefined;
 
-  async function handleUpgrade(buildingType: string) {
-    setUpgrading(buildingType);
-    setGlobalErr(null);
-    setErrors(prev => ({ ...prev, [buildingType]: "" }));
-    try {
-      await onUpgrade(buildingType);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upgrade failed";
-      if (msg.toLowerCase().includes("already upgrading")) {
-        setGlobalErr(msg);
-      } else {
-        setErrors(prev => ({ ...prev, [buildingType]: msg }));
-      }
-    } finally {
-      setUpgrading(null);
-    }
+  // ── Collapsed: compact list ────────────────────────────────────
+  if (collapsed) {
+    return (
+      <div style={S.listSection}>
+        <div style={S.listHeading}>FOB</div>
+        {sorted.map(b => {
+          const isSelected  = b.id === selectedId;
+          const dotColor    = b.isUpgrading ? "#f57c00" : b.isOperational ? "#4caf50" : "#f44336";
+          return (
+            <div
+              key={b.id}
+              style={{ ...S.listRow, ...(isSelected ? S.listRowSelected : {}) }}
+              onClick={() => onSelect(b)}
+            >
+              <span style={S.listIcon}>{BUILDING_ICONS[b.buildingType] ?? "□"}</span>
+              <span style={S.listName}>{BUILDING_LABELS[b.buildingType] ?? b.buildingType}</span>
+              <span style={S.listMeta}>
+                <span style={{ ...S.listDot, color: dotColor }}>●</span>
+                <span style={S.listLevel}>{b.level === 0 ? "–" : `L${b.level}`}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
+  // ── Normal: grid ───────────────────────────────────────────────
   return (
     <div style={S.section}>
       <div style={S.heading}>Forward Operating Base</div>
-      {globalErr && (
-        <div style={{ color: "#f44336", fontSize: 11, marginBottom: 8 }}>⚠ {globalErr}</div>
-      )}
       <div style={S.grid}>
         {sorted.map((b) => {
-          const cost     = upgradeCost(b.buildingType, b.level);
-          const canAfford = cost
-            ? steel >= cost.steel && credits >= cost.credits
-            : false;
-          const atMax       = !cost;
-          const btnDisabled = fobBusy || atMax || !canAfford;
-
           const extraStyle = b.isUpgrading
             ? S.cardUpgrading
             : !b.isOperational
@@ -176,7 +159,7 @@ export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct
               : {};
 
           return (
-            <div key={b.id} style={{ ...S.card, ...extraStyle }}>
+            <div key={b.id} style={{ ...S.card, ...extraStyle }} onClick={() => onSelect(b)}>
               <div style={S.row}>
                 <span style={S.icon}>{BUILDING_ICONS[b.buildingType] ?? "□"}</span>
                 <span style={S.name}>{BUILDING_LABELS[b.buildingType] ?? b.buildingType}</span>
@@ -184,7 +167,7 @@ export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct
               </div>
 
               {b.isUpgrading && b.upgradeEndsAt && (
-                <Countdown endsAt={b.upgradeEndsAt} label={b.level === 0 ? "⚒ Constructing" : "⬆ Upgrading"} />
+                <span style={S.timer}>{b.level === 0 ? "⚒ Constructing..." : "⬆ Upgrading..."}</span>
               )}
               {!b.isOperational && !b.isUpgrading && (
                 <span style={{ ...S.status, color: "#f44336" }}>● OFFLINE</span>
@@ -194,44 +177,6 @@ export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct
               )}
               {b.maintenanceFuelPerHour > 0 && (
                 <span style={S.fuel}>Fuel drain: {b.maintenanceFuelPerHour}/hr</span>
-              )}
-
-              {cost && !b.isUpgrading && (
-                <>
-                  <button
-                    style={{ ...S.upgradeBtn, ...(btnDisabled ? S.upgradeBtnDisabled : {}) }}
-                    disabled={btnDisabled}
-                    onClick={() => handleUpgrade(b.buildingType)}
-                  >
-                    {upgrading === b.buildingType
-                      ? "Starting..."
-                      : `⬆ Upgrade to Level ${b.level + 1}`}
-                  </button>
-                  <div style={S.costRow}>
-                    <span style={S.costChip}>
-                      <span>⚙️</span>
-                      <span style={steel   >= cost.steel   ? S.costOk : S.costShort}>
-                        {cost.steel.toLocaleString()} steel
-                      </span>
-                    </span>
-                    <span style={S.costChip}>
-                      <span>💰</span>
-                      <span style={credits >= cost.credits ? S.costOk : S.costShort}>
-                        {cost.credits.toLocaleString()} credits
-                      </span>
-                    </span>
-                    <span style={S.costChip}>
-                      <span>⏱</span>
-                      <span style={S.costTime}>{cost.time}</span>
-                    </span>
-                  </div>
-                </>
-              )}
-              {atMax && (
-                <span style={{ ...S.status, color: "#555" }}>MAX LEVEL</span>
-              )}
-              {errors[b.buildingType] && (
-                <span style={S.errMsg}>⚠ {errors[b.buildingType]}</span>
               )}
             </div>
           );
@@ -243,7 +188,7 @@ export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct
         const canAfford  = steel >= c.steel && credits >= c.credits;
         const btnDisabled = constructing !== null || !canAfford;
         return (
-          <div key={c.buildingType} style={{ ...S.card, marginTop: 8, borderColor: "#1a2a1a" }}>
+          <div key={c.buildingType} style={{ ...S.card, marginTop: 8, borderColor: "#1a2a1a", cursor: "default" }}>
             <div style={S.row}>
               <span style={S.icon}>{BUILDING_ICONS[c.buildingType] ?? "□"}</span>
               <span style={{ ...S.name, color: "#666" }}>{BUILDING_LABELS[c.buildingType] ?? c.buildingType}</span>
