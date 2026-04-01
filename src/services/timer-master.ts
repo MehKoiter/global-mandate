@@ -3,7 +3,7 @@
 // Integrates: combat, alliance, diplomacy, season
 // =============================================================
 
-import { processDueArrivals, processBuildCompletions, processBattleRounds, processResourceTick }
+import { processDueArrivals, processBuildCompletions, processBattleRounds, processResourceTick, processDueTrainings }
   from "./timer-service.js";
 import { processDueCoordinatedAttacks } from "./alliance.js";
 import { processDueTributes, processDueEspionageOps } from "./diplomacy.js";
@@ -26,6 +26,7 @@ async function fastTick(): Promise<void> {
     processDueArrivals(now),
     processBattleRounds(now),
     processBuildCompletions(now),
+    processDueTrainings(now),
   ]);
 }
 

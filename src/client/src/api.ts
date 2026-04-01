@@ -58,10 +58,28 @@ export async function getBase(): Promise<{ fob: FOB }> {
   return apiFetch<{ fob: FOB }>("/base");
 }
 
+export async function constructBuilding(buildingType: string): Promise<{ building: FOB["buildings"][number] }> {
+  return apiFetch("/base/construct", {
+    method: "POST",
+    body:   JSON.stringify({ buildingType }),
+  });
+}
+
 export async function upgradeBuilding(buildingType: string): Promise<{ building: FOB["buildings"][number]; upgradeEndsAt: string }> {
   return apiFetch("/base/upgrade", {
     method: "POST",
     body:   JSON.stringify({ buildingType }),
+  });
+}
+
+export async function getTraining(): Promise<{ training: import("./types.js").TrainingUnit[] }> {
+  return apiFetch("/base/training");
+}
+
+export async function trainUnit(unitType: string, quantity: number): Promise<{ unit: import("./types.js").TrainingUnit; trainingEndsAt: string }> {
+  return apiFetch("/base/train", {
+    method: "POST",
+    body:   JSON.stringify({ unitType, quantity }),
   });
 }
 

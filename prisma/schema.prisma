@@ -20,6 +20,7 @@ enum BuildingType {
   RADIO_TOWER
   BUNKER
   HYDRO_BAY
+  BARRACKS
 }
 
 enum SquadStatus {
@@ -161,8 +162,9 @@ model Unit {
   healthPct     Float   @default(100)
   morale        Float   @default(1.0)
   currentZoneId String?
-  status        String  @default("IDLE") // IDLE | MOVING | IN_BATTLE | GARRISONING | TRAINING
-  cargoCapacity Int     @default(0)
+  status          String    @default("IDLE") // IDLE | MOVING | IN_BATTLE | GARRISONING | TRAINING
+  trainingEndsAt  DateTime?
+  cargoCapacity   Int       @default(0)
   cargoUsed     Int     @default(0)
 
   owner       Player      @relation(fields: [ownerId], references: [id])

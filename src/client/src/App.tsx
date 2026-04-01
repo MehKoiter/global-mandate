@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, upgradeBuilding, openWs, TOKEN_KEY } from "./api.js";
-import type { PlayerStatus, FOB, WsMessage } from "./types.js";
-import { StatusHeader } from "./components/StatusHeader.js";
-import { BuildingList }  from "./components/BuildingList.js";
-import { AlertFeed }     from "./components/AlertFeed.js";
+import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, upgradeBuilding, constructBuilding, getTraining, trainUnit, openWs, TOKEN_KEY } from "./api.js";
+import type { PlayerStatus, FOB, WsMessage, TrainingUnit } from "./types.js";
+import { StatusHeader }   from "./components/StatusHeader.js";
+import { BuildingList }   from "./components/BuildingList.js";
+import { AlertFeed }      from "./components/AlertFeed.js";
+import { BarracksPanel }  from "./components/BarracksPanel.js";
 
 // ─── Login screen ──────────────────────────────────────────────
 
@@ -98,10 +99,11 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
 const MAX_ALERTS = 100;
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
-  const [player,  setPlayer]  = useState<PlayerStatus | null>(null);
-  const [fob,     setFob]     = useState<FOB | null>(null);
-  const [alerts,  setAlerts]  = useState<WsMessage[]>([]);
-  const [error,   setError]   = useState<string | null>(null);
+  const [player,   setPlayer]   = useState<PlayerStatus | null>(null);
+  const [fob,      setFob]      = useState<FOB | null>(null);
+  const [training, setTraining] = useState<TrainingUnit[]>([]);
+  const [alerts,   setAlerts]   = useState<WsMessage[]>([]);
+  const [error,    setError]    = useState<string | null>(null);
 
   const addAlert = useCallback((msg: WsMessage) => {
     setAlerts(prev => [...prev.slice(-(MAX_ALERTS - 1)), msg]);
@@ -109,8 +111,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   // Initial data load
   useEffect(() => {
-    Promise.all([getPlayerStatus(), getBase()])
-      .then(([p, b]) => { setPlayer(p); setFob(b.fob); })
+    Promise.all([getPlayerStatus(), getBase(), getTraining()])
+      .then(([p, b, t]) => { setPlayer(p); setFob(b.fob); setTraining(t.training); })
       .catch(err => setError(err instanceof Error ? err.message : "Failed to load"));
   }, []);
 
@@ -130,10 +132,16 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       if (["ZONE_CAPTURED", "BATTLE_RESOLVED", "UNIT_ARRIVED"].includes(msg.type)) {
         getPlayerStatus().then(setPlayer).catch(() => null);
       }
-      // Refresh both player and FOB when a building upgrade completes
-      if (msg.type === "BUILDING_UPGRADE_COMPLETED") {
+      // Refresh both player and FOB when a building upgrade or construction completes
+      if (msg.type === "BUILDING_UPGRADE_COMPLETED" || msg.type === "BUILDING_CONSTRUCTION_COMPLETED") {
         Promise.all([getPlayerStatus(), getBase()])
           .then(([p, b]) => { setPlayer(p); setFob(b.fob); })
+          .catch(() => null);
+      }
+      // Refresh training queue on training events
+      if (msg.type === "UNIT_TRAINING_STARTED" || msg.type === "UNIT_TRAINED") {
+        Promise.all([getPlayerStatus(), getTraining()])
+          .then(([p, t]) => { setPlayer(p); setTraining(t.training); })
           .catch(() => null);
       }
     });
@@ -179,8 +187,34 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               const updated = await getPlayerStatus();
               setPlayer(updated);
             }}
+            onConstruct={async (buildingType) => {
+              const { building } = await constructBuilding(buildingType);
+              setFob(prev => prev && { ...prev, buildings: [...prev.buildings, building] });
+              const updated = await getPlayerStatus();
+              setPlayer(updated);
+            }}
           />
         )}
+        {fob && player && (() => {
+          const barracks = fob.buildings.find(b => b.buildingType === "BARRACKS");
+          if (!barracks || !barracks.isOperational) return null;
+          return (
+            <BarracksPanel
+              barrackLevel={barracks.level}
+              training={training}
+              fuel={player.fuel}
+              rations={player.rations}
+              steel={player.steel}
+              credits={player.credits}
+              onTrain={async (unitType, quantity) => {
+                await trainUnit(unitType, quantity);
+                const [p, t] = await Promise.all([getPlayerStatus(), getTraining()]);
+                setPlayer(p);
+                setTraining(t.training);
+              }}
+            />
+          );
+        })()}
         <div style={S.divider} />
         <AlertFeed alerts={alerts} />
       </div>

@@ -125,6 +125,32 @@ export async function dequeueDueBuilds(now: number): Promise<BuildQueueEntry[]> 
 }
 
 // ─────────────────────────────────────────────
+// Train Queue
+// Same sorted-set pattern as builds, scored by completion timestamp.
+// ─────────────────────────────────────────────
+
+export interface TrainQueueEntry {
+  unitId:      string;
+  playerId:    string;
+  unitType:    string;
+  quantity:    number;
+  completesAt: number; // Unix ms
+}
+
+export async function enqueueTrainCompletion(entry: TrainQueueEntry): Promise<void> {
+  await redis.zadd(Keys.trainQueue, entry.completesAt, JSON.stringify(entry));
+}
+
+export async function dequeueDueTrains(now: number): Promise<TrainQueueEntry[]> {
+  const pipeline = redis.pipeline();
+  pipeline.zrangebyscore(Keys.trainQueue, "-inf", now);
+  pipeline.zremrangebyscore(Keys.trainQueue, "-inf", now);
+  const results = await pipeline.exec();
+  if (!results || !results[0] || results[0][0]) return [];
+  return (results[0][1] as string[]).map((m) => JSON.parse(m) as TrainQueueEntry);
+}
+
+// ─────────────────────────────────────────────
 // Battle State (live round tracking)
 // Each active battle has a hash in Redis for the current combat state.
 // Rounds resolve every 5 real-world minutes (300,000ms).

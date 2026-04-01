@@ -34,6 +34,13 @@ export interface FOB {
   buildings: Building[];
 }
 
+export interface TrainingUnit {
+  id:             string;
+  unitType:       string;
+  quantity:       number;
+  trainingEndsAt: string;
+}
+
 export interface WsMessage {
   type:    string;
   zoneId?: string;

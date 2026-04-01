@@ -30,6 +30,8 @@ const BUILDING_CONFIG: Partial<Record<BuildingType, BuildingConfig>> = {
   COMMAND_CENTER: { baseSteel: 500,  baseCredits: 800,  maxLevel: 10 },
   HYDRO_BAY:      { baseSteel: 150,  baseCredits: 300,  maxLevel: 10 },
   WAREHOUSE:      { baseSteel: 100,  baseCredits: 200,  maxLevel: 10 },
+  // Barracks: each level unlocks one additional concurrent training slot
+  BARRACKS:       { baseSteel: 300,  baseCredits: 500,  maxLevel: 5  },
 };
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -46,6 +48,11 @@ function buildTimeMinutes(level: number): number {
   if (level <= 1) return 0; // level 1 is placed instantly (starter building)
   if (TEST_FAST_BUILD) return 1 / 6; // ~10 seconds
   return Math.round(15 * Math.pow(1.25, level - 2));
+}
+
+// Time to construct a brand-new building from scratch (level 0 → 1)
+export function getConstructionTimeMinutes(): number {
+  return TEST_FAST_BUILD ? 1 / 6 : 15; // 10 seconds in test, 15 min in prod
 }
 
 // ─── Public API ────────────────────────────────────────────────

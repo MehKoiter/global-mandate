@@ -20,6 +20,9 @@ const EVENT_META: Record<string, EventMeta> = {
   DIPLOMACY_ACCEPTED:         { color: "#26c6da", label: "🤝 Deal Accepted"      },
   NAP_BROKEN:                 { color: "#ef5350", label: "💥 NAP Broken"         },
   STATUS_FLAGGED:             { color: "#ef9a9a", label: "⚑  Flagged"            },
+  BUILDING_CONSTRUCTED:       { color: "#4caf50", label: "⚒  Constructed"          },
+  UNIT_TRAINING_STARTED:      { color: "#7986cb", label: "⚑  Training Started"    },
+  UNIT_TRAINED:               { color: "#4caf50", label: "✅ Training Complete"   },
   CONNECTED:                  { color: "#555",    label: "🔗 Connected"           },
 };
 

@@ -8,6 +8,7 @@ import { prisma } from "../lib/prisma.js";
 import {
   dequeueDueArrivals,
   dequeueDueBuilds,
+  dequeueDueTrains,
   dequeueDueBattleRounds,
   getBattleState,
   setBattleState,
@@ -15,7 +16,7 @@ import {
   publishPlayerEvent,
   adjustCommandPoints,
 } from "../lib/redis.js";
-import type { TravelQueueEntry, BuildQueueEntry } from "../lib/redis.js";
+import type { TravelQueueEntry, BuildQueueEntry, TrainQueueEntry } from "../lib/redis.js";
 import { resolveBattleRound, UNIT_STATS } from "../lib/combat.js";
 import type { CombatUnit, ZoneDefense, UnitType } from "../lib/combat.js";
 
@@ -444,3 +445,46 @@ export async function processResourceTick(): Promise<void> {
   );
 }
 
+// ─────────────────────────────────────────────
+// Training Completions
+// ─────────────────────────────────────────────
+
+export async function processDueTrainings(now: number): Promise<void> {
+  const due = await dequeueDueTrains(now);
+  for (const entry of due) {
+    await handleTrainingComplete(entry);
+  }
+
+  // Recovery: units stuck in TRAINING with a past trainingEndsAt
+  const orphans = await prisma.unit.findMany({
+    where: { status: "TRAINING", trainingEndsAt: { lte: new Date(now) } },
+    select: { id: true, ownerId: true, unitType: true, quantity: true },
+  });
+  for (const u of orphans) {
+    await handleTrainingComplete({
+      unitId:      u.id,
+      playerId:    u.ownerId,
+      unitType:    u.unitType,
+      quantity:    u.quantity,
+      completesAt: now,
+    });
+  }
+}
+
+async function handleTrainingComplete(entry: TrainQueueEntry): Promise<void> {
+  await prisma.unit.update({
+    where: { id: entry.unitId },
+    data:  { status: "IDLE", trainingEndsAt: null },
+  });
+
+  const cpCost = UNIT_STATS[entry.unitType as UnitType]?.commandPointsCost ?? 0;
+  if (cpCost > 0) {
+    await adjustCommandPoints(entry.playerId, cpCost * entry.quantity);
+  }
+
+  await publishPlayerEvent(entry.playerId, "UNIT_TRAINED", {
+    unitType: entry.unitType,
+    quantity: entry.quantity,
+    message:  `${entry.quantity}× ${UNIT_STATS[entry.unitType as UnitType]?.displayName ?? entry.unitType} training complete`,
+  });
+}

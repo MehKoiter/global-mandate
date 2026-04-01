@@ -2,11 +2,17 @@ import { useState, useEffect } from "react";
 import type { Building } from "../types.js";
 
 interface Props {
-  buildings:  Building[];
-  steel:      number;
-  credits:    number;
-  onUpgrade:  (buildingType: string) => Promise<void>;
+  buildings:   Building[];
+  steel:       number;
+  credits:     number;
+  onUpgrade:   (buildingType: string) => Promise<void>;
+  onConstruct: (buildingType: string) => Promise<void>;
 }
+
+// Buildings that can be constructed (not given at start)
+const CONSTRUCTABLE: { buildingType: string; steel: number; credits: number }[] = [
+  { buildingType: "BARRACKS", steel: 300, credits: 500 },
+];
 
 const BUILDING_LABELS: Record<string, string> = {
   COMMAND_CENTER:     "Command Center",
@@ -18,6 +24,7 @@ const BUILDING_LABELS: Record<string, string> = {
   RADIO_TOWER:        "Radio Tower",
   BUNKER:             "Bunker",
   HYDRO_BAY:          "Hydro Bay",
+  BARRACKS:           "Barracks",
 };
 
 const BUILDING_ICONS: Record<string, string> = {
@@ -30,6 +37,7 @@ const BUILDING_ICONS: Record<string, string> = {
   RADIO_TOWER:        "◭",
   BUNKER:             "◬",
   HYDRO_BAY:          "◓",
+  BARRACKS:           "⚑",
 };
 
 // Client-side cost preview — mirrors src/lib/buildings.ts formula.
@@ -94,7 +102,7 @@ const S: Record<string, React.CSSProperties> = {
   errMsg:      { color: "#f44336", fontSize: 10, marginTop: 2 },
 };
 
-function Countdown({ endsAt }: { endsAt: string }) {
+function Countdown({ endsAt, label = "⬆ Upgrading" }: { endsAt: string; label?: string }) {
   const [remaining, setRemaining] = useState("");
 
   useEffect(() => {
@@ -111,13 +119,14 @@ function Countdown({ endsAt }: { endsAt: string }) {
     return () => clearInterval(id);
   }, [endsAt]);
 
-  return <span style={S.timer}>⬆ Upgrading: {remaining}</span>;
+  return <span style={S.timer}>{label}: {remaining}</span>;
 }
 
-export function BuildingList({ buildings, steel, credits, onUpgrade }: Props) {
-  const [upgrading,  setUpgrading]  = useState<string | null>(null);
-  const [errors,     setErrors]     = useState<Record<string, string>>({});
-  const [globalErr,  setGlobalErr]  = useState<string | null>(null);
+export function BuildingList({ buildings, steel, credits, onUpgrade, onConstruct }: Props) {
+  const [upgrading,    setUpgrading]    = useState<string | null>(null);
+  const [constructing, setConstructing] = useState<string | null>(null);
+  const [errors,       setErrors]       = useState<Record<string, string>>({});
+  const [globalErr,    setGlobalErr]    = useState<string | null>(null);
 
   const fobBusy = buildings.some(b => b.isUpgrading) || upgrading !== null;
 
@@ -170,10 +179,12 @@ export function BuildingList({ buildings, steel, credits, onUpgrade }: Props) {
               <div style={S.row}>
                 <span style={S.icon}>{BUILDING_ICONS[b.buildingType] ?? "□"}</span>
                 <span style={S.name}>{BUILDING_LABELS[b.buildingType] ?? b.buildingType}</span>
-                <span style={S.level}>Lvl {b.level}</span>
+                <span style={S.level}>{b.level === 0 ? "Building..." : `Lvl ${b.level}`}</span>
               </div>
 
-              {b.isUpgrading && b.upgradeEndsAt && <Countdown endsAt={b.upgradeEndsAt} />}
+              {b.isUpgrading && b.upgradeEndsAt && (
+                <Countdown endsAt={b.upgradeEndsAt} label={b.level === 0 ? "⚒ Constructing" : "⬆ Upgrading"} />
+              )}
               {!b.isOperational && !b.isUpgrading && (
                 <span style={{ ...S.status, color: "#f44336" }}>● OFFLINE</span>
               )}
@@ -225,6 +236,39 @@ export function BuildingList({ buildings, steel, credits, onUpgrade }: Props) {
           );
         })}
       </div>
+
+      {/* Constructable buildings not yet built */}
+      {CONSTRUCTABLE.filter(c => !buildings.some(b => b.buildingType === c.buildingType)).map(c => {
+        const canAfford  = steel >= c.steel && credits >= c.credits;
+        const btnDisabled = constructing !== null || !canAfford;
+        return (
+          <div key={c.buildingType} style={{ ...S.card, marginTop: 8, borderColor: "#1a2a1a" }}>
+            <div style={S.row}>
+              <span style={S.icon}>{BUILDING_ICONS[c.buildingType] ?? "□"}</span>
+              <span style={{ ...S.name, color: "#666" }}>{BUILDING_LABELS[c.buildingType] ?? c.buildingType}</span>
+              <span style={{ ...S.level, color: "#333" }}>Not Built</span>
+            </div>
+            <button
+              style={{ ...S.upgradeBtn, ...(btnDisabled ? S.upgradeBtnDisabled : {}) }}
+              disabled={btnDisabled}
+              onClick={async () => {
+                setConstructing(c.buildingType);
+                setErrors(prev => ({ ...prev, [c.buildingType]: "" }));
+                try { await onConstruct(c.buildingType); }
+                catch (err) { setErrors(prev => ({ ...prev, [c.buildingType]: err instanceof Error ? err.message : "Failed" })); }
+                finally { setConstructing(null); }
+              }}
+            >
+              {constructing === c.buildingType ? "Building..." : `⚒ Construct`}
+            </button>
+            <div style={S.costRow}>
+              <span style={S.costChip}><span>⚙️</span><span style={steel >= c.steel ? S.costOk : S.costShort}>{c.steel.toLocaleString()} steel</span></span>
+              <span style={S.costChip}><span>💰</span><span style={credits >= c.credits ? S.costOk : S.costShort}>{c.credits.toLocaleString()} credits</span></span>
+            </div>
+            {errors[c.buildingType] && <span style={S.errMsg}>⚠ {errors[c.buildingType]}</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }
