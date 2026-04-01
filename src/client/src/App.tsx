@@ -1,10 +1,19 @@
-import { useState, useEffect, useCallback } from "react";
-import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, upgradeBuilding, constructBuilding, getTraining, trainUnit, openWs, TOKEN_KEY } from "./api.js";
-import type { Building, PlayerStatus, FOB, WsMessage, TrainingUnit } from "./types.js";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  register, login, logout, isLoggedIn,
+  getPlayerStatus, getBase, upgradeBuilding, constructBuilding,
+  getTraining, trainUnit, openWs,
+  getMapSectors, getScoutReports,
+  TOKEN_KEY,
+} from "./api.js";
+import type { Building, PlayerStatus, FOB, WsMessage, TrainingUnit, Zone, ScoutReport } from "./types.js";
+import { resolveZoneVisibility } from "./lib/mapVisibility.js";
 import { StatusHeader }   from "./components/StatusHeader.js";
 import { BuildingList }   from "./components/BuildingList.js";
 import { BuildingDetail } from "./components/BuildingDetail.js";
 import { AlertFeed }      from "./components/AlertFeed.js";
+import { HexMap }         from "./components/HexMap.js";
+import { ZonePanel }      from "./components/ZonePanel.js";
 
 // ─── Login screen ──────────────────────────────────────────────
 
@@ -46,7 +55,7 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
       padding: "32px 40px", width: 320,
     },
     title: { color: "#e8e8e8", fontSize: 18, textTransform: "uppercase", letterSpacing: 3, marginBottom: 24 },
-    tabs: { display: "flex", marginBottom: 24, borderBottom: "1px solid #2a2a2a" },
+    tabs:  { display: "flex", marginBottom: 24, borderBottom: "1px solid #2a2a2a" },
     tab: {
       flex: 1, background: "none", border: "none", padding: "8px", fontSize: 11,
       letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit",
@@ -105,24 +114,52 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [alerts,           setAlerts]           = useState<WsMessage[]>([]);
   const [error,            setError]            = useState<string | null>(null);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  // Map state
+  const [zones,            setZones]            = useState<Zone[]>([]);
+  const [selectedZone,     setSelectedZone]     = useState<Zone | null>(null);
+  const [showBuildingPanel, setShowBuildingPanel] = useState(false);
+
+  // Stable refs for WS callback closures
+  const playerRef       = useRef<PlayerStatus | null>(null);
+  const scoutReportsRef = useRef<ScoutReport[]>([]);
+  useEffect(() => { playerRef.current = player; }, [player]);
 
   const addAlert = useCallback((msg: WsMessage) => {
     setAlerts(prev => [...prev.slice(-(MAX_ALERTS - 1)), msg]);
   }, []);
 
+  // ── Rebuild zone visibility whenever zones or player changes ──
+  const rawZonesRef = useRef<Omit<Zone, "visibility" | "units">[]>([]);
+
+  function rebuildZones(p: PlayerStatus) {
+    const resolved = resolveZoneVisibility(rawZonesRef.current, p.id, scoutReportsRef.current);
+    setZones(resolved);
+  }
+
   // Initial data load
   useEffect(() => {
-    Promise.all([getPlayerStatus(), getBase(), getTraining()])
-      .then(([p, b, t]) => { setPlayer(p); setFob(b.fob); setTraining(t.training); })
+    Promise.all([getPlayerStatus(), getBase(), getTraining(), getMapSectors(), getScoutReports()])
+      .then(([p, b, t, m, s]) => {
+        setPlayer(p);
+        setFob(b.fob);
+        setTraining(t.training);
+        scoutReportsRef.current = s.reports;
+        rawZonesRef.current = m.sectors.flatMap(sec =>
+          sec.zones.map(z => ({ ...z, sectorId: sec.id }))
+        );
+        rebuildZones(p);
+      })
       .catch(err => setError(err instanceof Error ? err.message : "Failed to load"));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Refresh player status every 30 s
   useEffect(() => {
     const id = setInterval(() => {
-      getPlayerStatus().then(setPlayer).catch(() => null);
+      getPlayerStatus().then(p => { setPlayer(p); rebuildZones(p); }).catch(() => null);
     }, 30_000);
     return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll training queue every 10 s
@@ -133,79 +170,115 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(id);
   }, []);
 
-  // WebSocket connection
+  // WebSocket
   useEffect(() => {
     const ws = openWs((msg) => {
       addAlert(msg);
-      if (["ZONE_CAPTURED", "BATTLE_RESOLVED", "UNIT_ARRIVED"].includes(msg.type)) {
-        getPlayerStatus().then(setPlayer).catch(() => null);
-      }
+
       if (msg.type === "BUILDING_UPGRADE_COMPLETED" || msg.type === "BUILDING_CONSTRUCTION_COMPLETED") {
         Promise.all([getPlayerStatus(), getBase()])
           .then(([p, b]) => {
             setPlayer(p);
             setFob(b.fob);
-            // Keep selectedBuilding in sync with the refreshed FOB data
             setSelectedBuilding(prev =>
               prev ? (b.fob.buildings.find(bl => bl.id === prev.id) ?? prev) : null,
             );
           })
           .catch(() => null);
       }
+
       if (msg.type === "UNIT_TRAINING_STARTED" || msg.type === "UNIT_TRAINED") {
         Promise.all([getPlayerStatus(), getTraining()])
           .then(([p, t]) => { setPlayer(p); setTraining(t.training); })
           .catch(() => null);
       }
+
+      // Refresh map on zone-affecting events
+      if (["ZONE_CAPTURED", "BATTLE_RESOLVED", "UNIT_ARRIVED"].includes(msg.type)) {
+        Promise.all([getPlayerStatus(), getMapSectors()])
+          .then(([p, m]) => {
+            setPlayer(p);
+            rawZonesRef.current = m.sectors.flatMap(sec =>
+              sec.zones.map(z => ({ ...z, sectorId: sec.id }))
+            );
+            rebuildZones(p);
+          })
+          .catch(() => null);
+      }
     });
     return () => ws.close();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addAlert]);
 
+  // ── Zone click handler ─────────────────────────────────────────
+  function handleZoneClick(zone: Zone) {
+    setSelectedZone(zone);
+    if (fob && zone.id === fob.zoneId) {
+      setShowBuildingPanel(true);
+    } else {
+      setShowBuildingPanel(false);
+      setSelectedBuilding(null);
+    }
+  }
+
+  // ── Styles ─────────────────────────────────────────────────────
   const S: Record<string, React.CSSProperties> = {
-    shell:   { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" },
+    shell:    { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" },
     topbar: {
       display: "flex", justifyContent: "flex-end",
       padding: "6px 20px", borderBottom: "1px solid #1a1a1a",
-      background: "#0d0d0d",
+      background: "#0d0d0d", flexShrink: 0,
     },
     logoutBtn: {
       background: "none", border: "none", color: "#444", cursor: "pointer",
       fontSize: 11, fontFamily: "inherit", letterSpacing: 1, textTransform: "uppercase",
     },
-    // Row splits the main area into list + detail panes
-    contentRow: { flex: 1, display: "flex", overflow: "hidden" },
-    // Left pane: narrow when a building is selected, full-width otherwise
-    leftPane: {
-      display: "flex", flexDirection: "column", overflow: "hidden",
-      transition: "width 0.2s ease",
-      width: selectedBuilding ? 180 : "100%",
-      minWidth: selectedBuilding ? 180 : undefined,
-      maxWidth: selectedBuilding ? 180 : undefined,
-      borderRight: selectedBuilding ? "1px solid #1a1a1a" : "none",
-      flexShrink: 0,
+    mapWrapper: { position: "relative", flex: 1, overflow: "hidden" },
+    // FOB building panel — right overlay
+    buildingPanel: {
+      position: "absolute", top: 0, right: 0, bottom: 0,
+      display: "flex", width: 460,
+      background: "#0d0d0d", borderLeft: "1px solid #1a1a1a",
+      zIndex: 20,
     },
-    leftScroll:  { overflowY: "auto", flex: 1 },
-    // Right pane: building detail + alert feed
-    rightPane:   { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
-    rightScroll: { flex: 1, overflowY: "auto" },
-    divider:     { borderTop: "1px solid #1a1a1a" },
-    error:       { padding: "12px 20px", color: "#f44336", fontSize: 12 },
+    buildingListCol:   { width: 180, overflowY: "auto", borderRight: "1px solid #111" },
+    buildingDetailCol: { flex: 1, overflowY: "auto" },
+    // Alert feed — top-right corner overlay
+    alertOverlay: {
+      position: "absolute", top: 8, width: 300,
+      maxHeight: 200, overflowY: "auto", zIndex: 5,
+      background: "rgba(10,10,10,0.85)", borderRadius: 2,
+    },
+    error: { padding: "12px 20px", color: "#f44336", fontSize: 12 },
   };
 
   if (error) return <div style={S.error}>⚠ {error}</div>;
+
+  const alertRight = showBuildingPanel ? 468 : 8;
 
   return (
     <div style={S.shell}>
       <div style={S.topbar}>
         <button style={S.logoutBtn} onClick={onLogout}>Disconnect</button>
       </div>
+
       {player && <StatusHeader player={player} />}
 
-      <div style={S.contentRow}>
-        {/* Left pane — building list (grid or collapsed) */}
-        <div style={S.leftPane}>
-          <div style={S.leftScroll}>
-            {fob && player && (
+      <div style={S.mapWrapper}>
+        {/* Hex map fills the full area */}
+        {player && (
+          <HexMap
+            zones={zones}
+            playerId={player.id}
+            fobZoneId={fob?.zoneId ?? null}
+            onZoneClick={handleZoneClick}
+          />
+        )}
+
+        {/* FOB building panel — slides in from right when FOB zone selected */}
+        {showBuildingPanel && fob && player && (
+          <div style={S.buildingPanel}>
+            <div style={S.buildingListCol}>
               <BuildingList
                 buildings={fob.buildings}
                 steel={player.steel}
@@ -219,55 +292,51 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                   setPlayer(updated);
                 }}
               />
-            )}
-          </div>
-        </div>
-
-        {/* Right pane — building detail or alert feed */}
-        <div style={S.rightPane}>
-          <div style={S.rightScroll}>
-            {selectedBuilding && player ? (
-              <BuildingDetail
-                building={selectedBuilding}
-                steel={player.steel}
-                credits={player.credits}
-                fuel={player.fuel}
-                rations={player.rations}
-                training={training}
-                onUpgrade={async (buildingType) => {
-                  const { building } = await upgradeBuilding(buildingType);
-                  setFob(prev => prev && {
-                    ...prev,
-                    buildings: prev.buildings.map(b => b.id === building.id ? building : b),
-                  });
-                  setSelectedBuilding(building);
-                  const updated = await getPlayerStatus();
-                  setPlayer(updated);
-                }}
-                onTrain={async (unitType, quantity) => {
-                  await trainUnit(unitType, quantity);
-                  const [p, t] = await Promise.all([getPlayerStatus(), getTraining()]);
-                  setPlayer(p);
-                  setTraining(t.training);
-                }}
-                onBack={() => setSelectedBuilding(null)}
-              />
-            ) : (
-              <>
-                <div style={S.divider} />
-                <AlertFeed alerts={alerts} />
-              </>
-            )}
-          </div>
-          {/* Alert feed always visible below detail when a building is open */}
-          {selectedBuilding && (
-            <>
-              <div style={S.divider} />
-              <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                <AlertFeed alerts={alerts} />
+            </div>
+            {selectedBuilding && (
+              <div style={S.buildingDetailCol}>
+                <BuildingDetail
+                  building={selectedBuilding}
+                  steel={player.steel}
+                  credits={player.credits}
+                  fuel={player.fuel}
+                  rations={player.rations}
+                  training={training}
+                  onUpgrade={async (buildingType) => {
+                    const { building } = await upgradeBuilding(buildingType);
+                    setFob(prev => prev && {
+                      ...prev,
+                      buildings: prev.buildings.map(b => b.id === building.id ? building : b),
+                    });
+                    setSelectedBuilding(building);
+                    const updated = await getPlayerStatus();
+                    setPlayer(updated);
+                  }}
+                  onTrain={async (unitType, quantity) => {
+                    await trainUnit(unitType, quantity);
+                    const [p, t] = await Promise.all([getPlayerStatus(), getTraining()]);
+                    setPlayer(p);
+                    setTraining(t.training);
+                  }}
+                  onBack={() => setSelectedBuilding(null)}
+                />
               </div>
-            </>
-          )}
+            )}
+          </div>
+        )}
+
+        {/* Zone detail panel — slides up from bottom */}
+        {player && (
+          <ZonePanel
+            zone={selectedZone}
+            playerId={player.id}
+            onClose={() => setSelectedZone(null)}
+          />
+        )}
+
+        {/* Alert feed — top-right corner overlay */}
+        <div style={{ ...S.alertOverlay, right: alertRight }}>
+          <AlertFeed alerts={alerts} />
         </div>
       </div>
     </div>

@@ -48,3 +48,53 @@ export interface WsMessage {
   payload: Record<string, unknown>;
   ts:      number;
 }
+
+// ─── Map Types ─────────────────────────────────────────────────
+
+export type ZoneVisibility = "owned" | "scouted" | "dark";
+
+export interface ZoneUnit {
+  id:        string;
+  unitType:  string;
+  quantity:  number;
+  ownerId:   string;
+  status:    string;
+  healthPct: number | null;
+}
+
+export interface Zone {
+  id:                 string;
+  name:               string;
+  sectorId:           string;
+  q:                  number;
+  r:                  number;
+  ownerPlayerId:      string | null;
+  fortificationLevel: number;
+  hasRoad:            boolean;
+  bridgeDestroyed:    boolean;
+  isConnected:        boolean;
+  capturedAt:         string | null;
+  fuelPerHour:        number | null;
+  rationsPerHour:     number | null;
+  steelPerHour:       number | null;
+  creditsPerHour:     number | null;
+  visibility:         ZoneVisibility;
+  units?:             ZoneUnit[];
+}
+
+export interface Sector {
+  id:    string;
+  name:  string;
+  q:     number;
+  r:     number;
+  zones: Omit<Zone, "visibility" | "units">[];
+}
+
+export interface ScoutReport {
+  id:           string;
+  scouterId:    string;
+  targetZoneId: string;
+  reportedAt:   string;
+  unitSnapshot: ZoneUnit[];
+  expiresAt:    string;
+}

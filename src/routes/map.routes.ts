@@ -99,6 +99,20 @@ export async function mapRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // GET /api/v1/map/scout-reports — active scout reports for the requesting player
+  fastify.get("/map/scout-reports", {
+    preHandler: fastify.authenticate,
+  }, async (req, reply) => {
+    const { playerId } = req.user;
+
+    const reports = await prisma.scoutReport.findMany({
+      where:   { scouterId: playerId, expiresAt: { gt: new Date() } },
+      orderBy: { reportedAt: "desc" },
+    });
+
+    return reply.send({ reports });
+  });
+
   // GET /api/v1/map/signal — all owned zones with their signal chain status
   fastify.get("/map/signal", {
     preHandler: fastify.authenticate,
