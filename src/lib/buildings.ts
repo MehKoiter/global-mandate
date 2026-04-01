@@ -31,7 +31,7 @@ const BUILDING_CONFIG: Partial<Record<BuildingType, BuildingConfig>> = {
   HYDRO_BAY:      { baseSteel: 150,  baseCredits: 300,  maxLevel: 10 },
   WAREHOUSE:      { baseSteel: 100,  baseCredits: 200,  maxLevel: 10 },
   // Barracks: each level unlocks one additional concurrent training slot
-  BARRACKS:       { baseSteel: 300,  baseCredits: 500,  maxLevel: 5  },
+  BARRACKS:       { baseSteel: 300,  baseCredits: 500,  maxLevel: 10 },
 };
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -49,6 +49,15 @@ function buildTimeMinutes(level: number): number {
   if (TEST_FAST_BUILD) return 1 / 6; // ~10 seconds
   return Math.round(15 * Math.pow(1.25, level - 2));
 }
+
+// ─── Barracks unit unlock levels ──────────────────────────────
+// Maps unitType → minimum Barracks level required to train it.
+// Unlocked at level 1 by default (no entry needed).
+export const BARRACKS_UNIT_UNLOCK: Partial<Record<string, number>> = {
+  SPECIAL_FORCES: 2,
+  RANGERS:        5,
+  MARSOC_ATGM:    10,
+};
 
 // Time to construct a brand-new building from scratch (level 0 → 1)
 export function getConstructionTimeMinutes(): number {
