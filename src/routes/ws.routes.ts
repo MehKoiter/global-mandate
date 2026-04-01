@@ -65,6 +65,8 @@ export async function wsRoutes(fastify: FastifyInstance) {
       type:    "CONNECTED",
       playerId,
       channels: [playerChannel, ...zoneChannels],
+      payload: { message: `Listening on ${1 + zoneChannels.length} channel${zoneChannels.length !== 0 ? "s" : ""}` },
+      ts:      Date.now(),
     }));
 
     // ── Client messages ───────────────────────────────────────

@@ -47,10 +47,15 @@ function round50(n: number) { return Math.round(n / 50) * 50; }
 function upgradeCost(buildingType: string, currentLevel: number) {
   const base = UPGRADE_BASE[buildingType];
   if (!base || currentLevel >= MAX_LEVEL) return null;
-  const m = Math.pow(1.5, currentLevel); // currentLevel = targetLevel - 1
+  const m = Math.pow(1.5, currentLevel);
+  const rawMins = 15 * Math.pow(1.25, currentLevel - 1);
+  const mins    = Math.round(rawMins);
   return {
     steel:   round50(base.steel   * m),
     credits: round50(base.credits * m),
+    time:    mins >= 60
+      ? `${Math.floor(mins / 60)}h ${mins % 60 > 0 ? `${mins % 60}m` : ""}`.trim()
+      : `${mins}m`,
   };
 }
 
@@ -81,9 +86,11 @@ const S: Record<string, React.CSSProperties> = {
     background: "#111", border: "1px solid #1e1e1e",
     color: "#333", cursor: "not-allowed",
   },
-  upgradeCost: { color: "#888", fontSize: 10, marginTop: 2 },
-  costOk:      { color: "#4caf50" },
-  costShort:   { color: "#f44336" },
+  costRow:   { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 },
+  costChip:  { fontSize: 10, display: "flex", alignItems: "center", gap: 3 },
+  costOk:    { color: "#c8c8c8" },
+  costShort: { color: "#f44336" },
+  costTime:  { color: "#666", fontSize: 10 },
   errMsg:      { color: "#f44336", fontSize: 10, marginTop: 2 },
 };
 
@@ -186,13 +193,26 @@ export function BuildingList({ buildings, steel, credits, onUpgrade }: Props) {
                   >
                     {upgrading === b.buildingType
                       ? "Starting..."
-                      : `⬆ Upgrade to Lvl ${b.level + 1}`}
+                      : `⬆ Upgrade to Level ${b.level + 1}`}
                   </button>
-                  <span style={S.upgradeCost}>
-                    <span style={steel   >= cost.steel   ? S.costOk : S.costShort}>{cost.steel.toLocaleString()}s</span>
-                    {" / "}
-                    <span style={credits >= cost.credits ? S.costOk : S.costShort}>{cost.credits.toLocaleString()}c</span>
-                  </span>
+                  <div style={S.costRow}>
+                    <span style={S.costChip}>
+                      <span>⚙️</span>
+                      <span style={steel   >= cost.steel   ? S.costOk : S.costShort}>
+                        {cost.steel.toLocaleString()} steel
+                      </span>
+                    </span>
+                    <span style={S.costChip}>
+                      <span>💰</span>
+                      <span style={credits >= cost.credits ? S.costOk : S.costShort}>
+                        {cost.credits.toLocaleString()} credits
+                      </span>
+                    </span>
+                    <span style={S.costChip}>
+                      <span>⏱</span>
+                      <span style={S.costTime}>{cost.time}</span>
+                    </span>
+                  </div>
                 </>
               )}
               {atMax && (

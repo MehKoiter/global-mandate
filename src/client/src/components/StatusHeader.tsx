@@ -53,10 +53,10 @@ export function StatusHeader({ player }: Props) {
 
       <div style={S.group}>
         {([
-          ["FUEL",    player.fuel,    player.fuelNetPerHour,    "#f57c00"],
-          ["RATIONS", player.rations, player.rationsNetPerHour, "#388e3c"],
-          ["STEEL",   player.steel,   player.steelNetPerHour,   "#78909c"],
-          ["CREDITS", player.credits, player.creditsNetPerHour, "#fdd835"],
+          ["⛽ FUEL",    player.fuel,    player.fuelNetPerHour,    "#f57c00"],
+          ["🍖 RATIONS", player.rations, player.rationsNetPerHour, "#388e3c"],
+          ["⚙️ STEEL",   player.steel,   player.steelNetPerHour,   "#78909c"],
+          ["💰 CREDITS", player.credits, player.creditsNetPerHour, "#fdd835"],
         ] as [string, number, number, string][]).map(([label, val, rate, color]) => (
           <div key={label} style={S.resource}>
             <span style={{ ...S.label, color }}>{label}</span>
