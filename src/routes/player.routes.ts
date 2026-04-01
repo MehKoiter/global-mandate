@@ -93,16 +93,16 @@ export async function playerRoutes(fastify: FastifyInstance) {
 
   // POST /api/v1/player/login
   fastify.post<{
-    Body: { email: string; password: string };
+    Body: { login: string; password: string };
   }>("/player/login", async (req, reply) => {
-    const { email, password } = req.body;
+    const { login: loginId, password } = req.body;
 
-    if (!email || !password) {
-      return reply.status(400).send({ error: "email and password are required" });
+    if (!loginId || !password) {
+      return reply.status(400).send({ error: "username/email and password are required" });
     }
 
-    const player = await prisma.player.findUnique({
-      where: { email },
+    const player = await prisma.player.findFirst({
+      where: { OR: [{ email: loginId }, { username: loginId }] },
       select: { id: true, username: true, passwordHash: true },
     });
     if (!player || !verifyPassword(password, player.passwordHash)) {

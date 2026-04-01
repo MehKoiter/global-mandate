@@ -29,10 +29,10 @@ export async function register(username: string, email: string, password: string
   return data.token;
 }
 
-export async function login(email: string, password: string): Promise<string> {
+export async function login(loginId: string, password: string): Promise<string> {
   const data = await apiFetch<{ token: string }>("/player/login", {
     method: "POST",
-    body:   JSON.stringify({ email, password }),
+    body:   JSON.stringify({ login: loginId, password }),
   });
   localStorage.setItem(TOKEN_KEY, data.token);
   return data.token;

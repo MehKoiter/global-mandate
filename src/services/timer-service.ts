@@ -336,6 +336,23 @@ export async function processBuildCompletions(now: number): Promise<void> {
   for (const entry of due) {
     await handleBuildComplete(entry);
   }
+
+  // Recovery: catch buildings whose Redis entry was lost (e.g. server restart)
+  // but are still marked isUpgrading in the DB with a past upgradeEndsAt.
+  const orphans = await prisma.building.findMany({
+    where: { isUpgrading: true, upgradeEndsAt: { lte: new Date(now) } },
+    select: { id: true, buildingType: true, level: true, fob: { select: { playerId: true, id: true } } },
+  });
+  for (const b of orphans) {
+    await handleBuildComplete({
+      buildingId:   b.id,
+      fobId:        b.fob.id,
+      playerId:     b.fob.playerId,
+      buildingType: b.buildingType,
+      newLevel:     b.level + 1,
+      completesAt:  now,
+    });
+  }
 }
 
 async function handleBuildComplete(entry: BuildQueueEntry): Promise<void> {

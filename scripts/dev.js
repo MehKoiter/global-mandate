@@ -83,6 +83,12 @@ const { result } = concurrently(
       prefixColor: "blue",
     },
     {
+      command:    "npm run dev:timer",
+      name:       "timer",
+      cwd:        ROOT,
+      prefixColor: "yellow",
+    },
+    {
       command:    "npm run dev",
       name:       "frontend",
       cwd:        CLIENT,

@@ -8,21 +8,31 @@ import { AlertFeed }     from "./components/AlertFeed.js";
 // ─── Login screen ──────────────────────────────────────────────
 
 function LoginForm({ onLogin }: { onLogin: () => void }) {
+  const [mode,     setMode]     = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
-  const [email,    setEmail]    = useState("");
+  const [loginId,  setLoginId]  = useState("");
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState<string | null>(null);
   const [loading,  setLoading]  = useState(false);
+
+  function switchMode(next: "login" | "register") {
+    setMode(next);
+    setError(null);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      await register(username, email, password);
+      if (mode === "register") {
+        await register(username, loginId, password);
+      } else {
+        await login(loginId, password);
+      }
       onLogin();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof Error ? err.message : mode === "register" ? "Registration failed" : "Login failed");
     } finally {
       setLoading(false);
     }
@@ -35,6 +45,11 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
       padding: "32px 40px", width: 320,
     },
     title: { color: "#e8e8e8", fontSize: 18, textTransform: "uppercase", letterSpacing: 3, marginBottom: 24 },
+    tabs: { display: "flex", marginBottom: 24, borderBottom: "1px solid #2a2a2a" },
+    tab: {
+      flex: 1, background: "none", border: "none", padding: "8px", fontSize: 11,
+      letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit",
+    },
     label: { display: "block", color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 },
     input: {
       width: "100%", background: "#0a0a0a", border: "1px solid #2a2a2a",
@@ -50,14 +65,28 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
     err: { color: "#f44336", fontSize: 12, marginTop: 12 },
   };
 
+  const activeTab:   React.CSSProperties = { color: "#e8e8e8", borderBottom: "2px solid #4caf50" };
+  const inactiveTab: React.CSSProperties = { color: "#444" };
+
   return (
     <div style={S.wrap}>
       <form style={S.box} onSubmit={submit}>
         <div style={S.title}>Global Mandate</div>
-        <label style={S.label}>Username<input style={S.input} type="text" value={username} onChange={e => setUsername(e.target.value)} required /></label>
-        <label style={S.label}>Email<input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
+        <div style={S.tabs}>
+          <button type="button" style={{ ...S.tab, ...(mode === "login"    ? activeTab : inactiveTab) }} onClick={() => switchMode("login")}>Login</button>
+          <button type="button" style={{ ...S.tab, ...(mode === "register" ? activeTab : inactiveTab) }} onClick={() => switchMode("register")}>Register</button>
+        </div>
+        {mode === "register" && (
+          <label style={S.label}>Username<input style={S.input} type="text" value={username} onChange={e => setUsername(e.target.value)} required /></label>
+        )}
+        <label style={S.label}>
+          {mode === "login" ? "Username or Email" : "Email"}
+          <input style={S.input} type="text" value={loginId} onChange={e => setLoginId(e.target.value)} required />
+        </label>
         <label style={S.label}>Password<input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)} required /></label>
-        <button style={S.btn} disabled={loading}>{loading ? "Authenticating..." : "Connect"}</button>
+        <button style={S.btn} disabled={loading}>
+          {loading ? "Authenticating..." : mode === "login" ? "Connect" : "Register"}
+        </button>
         {error && <div style={S.err}>⚠ {error}</div>}
       </form>
     </div>
@@ -100,6 +129,12 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       // Refresh player on resource-affecting events
       if (["ZONE_CAPTURED", "BATTLE_RESOLVED", "UNIT_ARRIVED"].includes(msg.type)) {
         getPlayerStatus().then(setPlayer).catch(() => null);
+      }
+      // Refresh both player and FOB when a building upgrade completes
+      if (msg.type === "BUILDING_UPGRADE_COMPLETED") {
+        Promise.all([getPlayerStatus(), getBase()])
+          .then(([p, b]) => { setPlayer(p); setFob(b.fob); })
+          .catch(() => null);
       }
     });
     return () => ws.close();

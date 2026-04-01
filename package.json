@@ -20,6 +20,7 @@
     "build": "tsc",
     "dev": "node scripts/dev.js",
     "dev:server": "tsx watch src/server.ts",
+    "dev:timer": "tsx watch src/services/timer-master.ts",
     "seed": "tsx src/scripts/seed-world.ts"
   },
   "dependencies": {

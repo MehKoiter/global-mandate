@@ -100,7 +100,7 @@ function Countdown({ endsAt }: { endsAt: string }) {
   useEffect(() => {
     function update() {
       const diff = new Date(endsAt).getTime() - Date.now();
-      if (diff <= 0) { setRemaining("Done"); return; }
+      if (diff <= 0) { setRemaining("Completing..."); return; }
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const sec = Math.floor((diff % 60000) / 1000);
