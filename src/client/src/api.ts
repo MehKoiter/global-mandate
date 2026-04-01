@@ -1,6 +1,6 @@
 // Typed API helpers — all routes prefixed /api/v1
 
-import type { PlayerStatus, FOB } from "./types.js";
+import type { PlayerStatus, FOB, Sector, Zone, ZoneUnit, ScoutReport } from "./types.js";
 
 export const TOKEN_KEY = "gm_token";
 
@@ -81,6 +81,20 @@ export async function trainUnit(unitType: string, quantity: number): Promise<{ u
     method: "POST",
     body:   JSON.stringify({ unitType, quantity }),
   });
+}
+
+// ─── Map ───────────────────────────────────────────────────────
+
+export async function getMapSectors(): Promise<{ sectors: Sector[] }> {
+  return apiFetch<{ sectors: Sector[] }>("/map/sectors");
+}
+
+export async function getZoneDetail(zoneId: string): Promise<{ zone: Zone & { units: ZoneUnit[] } }> {
+  return apiFetch<{ zone: Zone & { units: ZoneUnit[] } }>(`/map/zone/${encodeURIComponent(zoneId)}`);
+}
+
+export async function getScoutReports(): Promise<{ reports: ScoutReport[] }> {
+  return apiFetch<{ reports: ScoutReport[] }>("/map/scout-reports");
 }
 
 // ─── WebSocket ─────────────────────────────────────────────────
