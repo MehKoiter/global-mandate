@@ -4,7 +4,8 @@
       "Bash(npm run:*)",
       "Bash(npm install:*)",
       "Bash(node scripts/dev.js --help)",
-      "Bash(node -e \"import\\(''''./scripts/dev.js''''\\).catch\\(e => console.log\\(''''import ok, runtime error expected without services:'''', e.message\\)\\)\")"
+      "Bash(node -e \"import\\(''''./scripts/dev.js''''\\).catch\\(e => console.log\\(''''import ok, runtime error expected without services:'''', e.message\\)\\)\")",
+      "Bash(npx prisma:*)"
     ]
   }
 }
