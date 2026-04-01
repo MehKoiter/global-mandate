@@ -472,19 +472,30 @@ export async function processDueTrainings(now: number): Promise<void> {
 }
 
 async function handleTrainingComplete(entry: TrainQueueEntry): Promise<void> {
+  // DB update is always first and isolated — a Redis failure must never leave
+  // the unit stuck in TRAINING status.
   await prisma.unit.update({
     where: { id: entry.unitId },
     data:  { status: "IDLE", trainingEndsAt: null },
   });
 
-  const cpCost = UNIT_STATS[entry.unitType as UnitType]?.commandPointsCost ?? 0;
-  if (cpCost > 0) {
-    await adjustCommandPoints(entry.playerId, cpCost * entry.quantity);
+  // CP and pub/sub are best-effort — log failures but don't re-throw
+  try {
+    const cpCost = UNIT_STATS[entry.unitType as UnitType]?.commandPointsCost ?? 0;
+    if (cpCost > 0) {
+      await adjustCommandPoints(entry.playerId, cpCost * entry.quantity);
+    }
+  } catch (err) {
+    console.error(`[timer] adjustCommandPoints failed for unit ${entry.unitId}:`, err);
   }
 
-  await publishPlayerEvent(entry.playerId, "UNIT_TRAINED", {
-    unitType: entry.unitType,
-    quantity: entry.quantity,
-    message:  `${entry.quantity}× ${UNIT_STATS[entry.unitType as UnitType]?.displayName ?? entry.unitType} training complete`,
-  });
+  try {
+    await publishPlayerEvent(entry.playerId, "UNIT_TRAINED", {
+      unitType: entry.unitType,
+      quantity: entry.quantity,
+      message:  `${entry.quantity}× ${UNIT_STATS[entry.unitType as UnitType]?.displayName ?? entry.unitType} training complete`,
+    });
+  } catch (err) {
+    console.error(`[timer] publishPlayerEvent failed for unit ${entry.unitId}:`, err);
+  }
 }
