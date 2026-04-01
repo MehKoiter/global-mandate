@@ -176,6 +176,9 @@ export function BarracksPanel({ barrackLevel, training, fuel, rations, steel, cr
       <div style={S.subheading}>Recruit Infantry</div>
       <div style={S.grid}>
         {INFANTRY_UNITS.map(u => {
+          const locked    = barrackLevel < u.unlocksAtLevel;
+          const q         = qty(u.unitType);
+          const totalCost = {
           const locked      = barrackLevel < u.unlocksAtLevel;
           const q           = qty(u.unitType);
           const totalCost   = {

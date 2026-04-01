@@ -42,19 +42,20 @@ const BUILDING_ICONS: Record<string, string> = {
 
 // Client-side cost preview — mirrors src/lib/buildings.ts formula.
 // Enforcement is always server-side; this is display-only.
-const UPGRADE_BASE: Record<string, { steel: number; credits: number } | undefined> = {
-  COMMAND_CENTER: { steel: 500,  credits: 800  },
-  COMM_CENTER:    { steel: 200,  credits: 400  },
-  HYDRO_BAY:      { steel: 150,  credits: 300  },
-  WAREHOUSE:      { steel: 100,  credits: 200  },
+const UPGRADE_BASE: Record<string, { steel: number; credits: number; maxLevel: number } | undefined> = {
+  COMMAND_CENTER: { steel: 500, credits: 800,  maxLevel: 10 },
+  COMM_CENTER:    { steel: 200, credits: 400,  maxLevel: 10 },
+  HYDRO_BAY:      { steel: 150, credits: 300,  maxLevel: 10 },
+  WAREHOUSE:      { steel: 100, credits: 200,  maxLevel: 10 },
+  BARRACKS:       { steel: 300, credits: 500,  maxLevel: 10 },
 };
-const MAX_LEVEL = 10;
+const MAX_LEVEL = 10; // fallback for any building not listed above
 
 function round50(n: number) { return Math.round(n / 50) * 50; }
 
 function upgradeCost(buildingType: string, currentLevel: number) {
   const base = UPGRADE_BASE[buildingType];
-  if (!base || currentLevel >= MAX_LEVEL) return null;
+  if (!base || currentLevel >= base.maxLevel) return null;
   const m = Math.pow(1.5, currentLevel);
   const rawMins = 15 * Math.pow(1.25, currentLevel - 1);
   const mins    = Math.round(rawMins);
