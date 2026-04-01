@@ -124,6 +124,15 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(id);
   }, []);
 
+  // Poll training queue every 10 s so completions show even if the WS event
+  // was missed (e.g. timer service restarted mid-training)
+  useEffect(() => {
+    const id = setInterval(() => {
+      getTraining().then(t => setTraining(t.training)).catch(() => null);
+    }, 10_000);
+    return () => clearInterval(id);
+  }, []);
+
   // WebSocket connection
   useEffect(() => {
     const ws = openWs((msg) => {
