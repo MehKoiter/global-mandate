@@ -14,40 +14,44 @@ interface Props {
 // ── Infantry units trainable in a Barracks ────────────────────
 const INFANTRY_UNITS = [
   {
-    unitType:    "INFANTRY_GRUNT",
-    displayName: "Infantry Squad",
-    tier:        1,
-    cost:        { fuel: 0, rations: 20, steel: 0,  credits: 50  },
-    timeSec:     300,
-    cp:          1,
-    desc:        "Basic infantry. Effective vs APCs.",
+    unitType:       "INFANTRY_GRUNT",
+    displayName:    "Infantry Squad",
+    tier:           1,
+    unlocksAtLevel: 1,
+    cost:           { fuel: 0, rations: 20, steel: 0,  credits: 50  },
+    timeSec:        300,
+    cp:             1,
+    desc:           "Basic infantry. Effective vs APCs.",
   },
   {
-    unitType:    "SPECIAL_FORCES",
-    displayName: "Special Forces",
-    tier:        2,
-    cost:        { fuel: 0, rations: 60, steel: 20, credits: 200 },
-    timeSec:     1800,
-    cp:          3,
-    desc:        "Elite soldiers. Counters grunts and APCs.",
+    unitType:       "SPECIAL_FORCES",
+    displayName:    "Special Forces",
+    tier:           2,
+    unlocksAtLevel: 2,
+    cost:           { fuel: 0, rations: 60, steel: 20, credits: 200 },
+    timeSec:        1800,
+    cp:             3,
+    desc:           "Elite soldiers. Counters grunts and APCs.",
   },
   {
-    unitType:    "RANGERS",
-    displayName: "Rangers",
-    tier:        2,
-    cost:        { fuel: 0, rations: 50, steel: 10, credits: 150 },
-    timeSec:     1200,
-    cp:          2,
-    desc:        "Fast light infantry with high mobility.",
+    unitType:       "RANGERS",
+    displayName:    "Rangers",
+    tier:           2,
+    unlocksAtLevel: 5,
+    cost:           { fuel: 0, rations: 50, steel: 10, credits: 150 },
+    timeSec:        1200,
+    cp:             2,
+    desc:           "Fast light infantry with high mobility.",
   },
   {
-    unitType:    "MARSOC_ATGM",
-    displayName: "MARSOC ATGM",
-    tier:        2,
-    cost:        { fuel: 0, rations: 40, steel: 30, credits: 180 },
-    timeSec:     1500,
-    cp:          2,
-    desc:        "Anti-tank specialists. Lethal vs armour.",
+    unitType:       "MARSOC_ATGM",
+    displayName:    "MARSOC ATGM",
+    tier:           2,
+    unlocksAtLevel: 10,
+    cost:           { fuel: 0, rations: 40, steel: 30, credits: 180 },
+    timeSec:        1500,
+    cp:             2,
+    desc:           "Anti-tank specialists. Lethal vs armour.",
   },
 ];
 
@@ -172,47 +176,58 @@ export function BarracksPanel({ barrackLevel, training, fuel, rations, steel, cr
       <div style={S.subheading}>Recruit Infantry</div>
       <div style={S.grid}>
         {INFANTRY_UNITS.map(u => {
-          const q           = qty(u.unitType);
-          const totalCost   = {
+          const locked    = barrackLevel < u.unlocksAtLevel;
+          const q         = qty(u.unitType);
+          const totalCost = {
             fuel:    u.cost.fuel    * q,
             rations: u.cost.rations * q,
             steel:   u.cost.steel   * q,
             credits: u.cost.credits * q,
           };
-          const canAfford   = fuel    >= totalCost.fuel    &&
-                              rations >= totalCost.rations &&
-                              steel   >= totalCost.steel   &&
-                              credits >= totalCost.credits;
-          const disabled    = queueFull || !canAfford || pending !== null;
+          const canAfford = fuel    >= totalCost.fuel    &&
+                            rations >= totalCost.rations &&
+                            steel   >= totalCost.steel   &&
+                            credits >= totalCost.credits;
+          const disabled  = locked || queueFull || !canAfford || pending !== null;
+          const cardStyle = locked ? { ...S.card, opacity: 0.45, borderColor: "#1a1a1a" } : S.card;
 
           return (
-            <div key={u.unitType} style={S.card}>
+            <div key={u.unitType} style={cardStyle}>
               <div style={S.row}>
-                <span style={S.name}>{u.displayName}</span>
+                <span style={{ ...S.name, color: locked ? "#444" : "#c8c8c8" }}>
+                  {locked ? "🔒 " : ""}{u.displayName}
+                </span>
                 <span style={S.tier}>T{u.tier} · {u.cp} CP</span>
               </div>
-              <span style={S.desc}>{u.desc}</span>
-              <div style={S.costRow}>
-                {u.cost.fuel    > 0 && <span style={S.costChip}><span>⛽</span><span style={fuel    >= totalCost.fuel    ? S.costOk : S.costShort}>{totalCost.fuel}</span></span>}
-                {u.cost.rations > 0 && <span style={S.costChip}><span>🍖</span><span style={rations >= totalCost.rations ? S.costOk : S.costShort}>{totalCost.rations}</span></span>}
-                {u.cost.steel   > 0 && <span style={S.costChip}><span>⚙️</span><span style={steel   >= totalCost.steel   ? S.costOk : S.costShort}>{totalCost.steel}</span></span>}
-                {u.cost.credits > 0 && <span style={S.costChip}><span>💰</span><span style={credits >= totalCost.credits ? S.costOk : S.costShort}>{totalCost.credits}</span></span>}
-                <span style={{ ...S.costChip, color: "#555" }}>⏱ {fmtTime(u.timeSec * q)}</span>
-              </div>
-              <div style={S.qtyRow}>
-                <button style={S.qtyBtn} onClick={() => setQty(u.unitType, q - 1)}>−</button>
-                <span style={S.qtyVal}>{q}</span>
-                <button style={S.qtyBtn} onClick={() => setQty(u.unitType, q + 1)}>+</button>
-                <span style={{ color: "#444", fontSize: 10 }}>units</span>
-              </div>
-              <button
-                style={{ ...S.trainBtn, ...(disabled ? S.trainBtnDisabled : {}) }}
-                disabled={disabled}
-                onClick={() => handleTrain(u.unitType)}
-              >
-                {pending === u.unitType ? "Sending..." : queueFull ? "Queue Full" : `⚑ Train ${q}×`}
-              </button>
-              {errors[u.unitType] && <span style={S.errMsg}>⚠ {errors[u.unitType]}</span>}
+              {locked
+                ? <span style={{ ...S.desc, color: "#f57c00" }}>Unlocks at Barracks level {u.unlocksAtLevel}</span>
+                : <span style={S.desc}>{u.desc}</span>
+              }
+              {!locked && (
+                <>
+                  <div style={S.costRow}>
+                    {u.cost.fuel    > 0 && <span style={S.costChip}><span>⛽</span><span style={fuel    >= totalCost.fuel    ? S.costOk : S.costShort}>{totalCost.fuel}</span></span>}
+                    {u.cost.rations > 0 && <span style={S.costChip}><span>🍖</span><span style={rations >= totalCost.rations ? S.costOk : S.costShort}>{totalCost.rations}</span></span>}
+                    {u.cost.steel   > 0 && <span style={S.costChip}><span>⚙️</span><span style={steel   >= totalCost.steel   ? S.costOk : S.costShort}>{totalCost.steel}</span></span>}
+                    {u.cost.credits > 0 && <span style={S.costChip}><span>💰</span><span style={credits >= totalCost.credits ? S.costOk : S.costShort}>{totalCost.credits}</span></span>}
+                    <span style={{ ...S.costChip, color: "#555" }}>⏱ {fmtTime(u.timeSec * q)}</span>
+                  </div>
+                  <div style={S.qtyRow}>
+                    <button style={S.qtyBtn} onClick={() => setQty(u.unitType, q - 1)}>−</button>
+                    <span style={S.qtyVal}>{q}</span>
+                    <button style={S.qtyBtn} onClick={() => setQty(u.unitType, q + 1)}>+</button>
+                    <span style={{ color: "#444", fontSize: 10 }}>units</span>
+                  </div>
+                  <button
+                    style={{ ...S.trainBtn, ...(disabled ? S.trainBtnDisabled : {}) }}
+                    disabled={disabled}
+                    onClick={() => handleTrain(u.unitType)}
+                  >
+                    {pending === u.unitType ? "Sending..." : queueFull ? "Queue Full" : `⚑ Train ${q}×`}
+                  </button>
+                  {errors[u.unitType] && <span style={S.errMsg}>⚠ {errors[u.unitType]}</span>}
+                </>
+              )}
             </div>
           );
         })}
