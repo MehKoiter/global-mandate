@@ -23,7 +23,7 @@ const BUILDING_LABELS: Record<string, string> = {
   HEAVY_FACTORY:      "Heavy Factory",
   RADIO_TOWER:        "Radio Tower",
   BUNKER:             "Bunker",
-  HYDRO_BAY:          "Hydro Bay",
+  HYDRO_BAY:          "Defense Logistics",
   BARRACKS:           "Barracks",
 };
 
