@@ -50,6 +50,16 @@ function buildTimeMinutes(level: number): number {
   return Math.round(15 * Math.pow(1.25, level - 2));
 }
 
+// ─── Building passive production ──────────────────────────────
+// Returns the rations produced per hour by a building at a given level.
+// Add other buildings here as their production is defined.
+export function getBuildingRationsProduction(buildingType: BuildingType, level: number): number {
+  if (buildingType === BuildingType.HYDRO_BAY) {
+    return 5 * level; // 5/hr at Lvl 1, 50/hr at Lvl 10
+  }
+  return 0;
+}
+
 // ─── Barracks unit unlock levels ──────────────────────────────
 // Maps unitType → minimum Barracks level required to train it.
 // Unlocked at level 1 by default (no entry needed).
