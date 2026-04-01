@@ -294,7 +294,6 @@ export interface CombatUnit {
 export interface ZoneDefense {
   fortificationLevel: number; // 0–10 → adds level × 15 flat defense
   wallBonus:          number; // additional flat bonus
-  hasAABattery:       boolean; // reduces air attack by 35%
 }
 
 export interface RoundResult {
@@ -356,11 +355,7 @@ function calcTotalDefense(
   const fortBonus = zone.fortificationLevel * 15;
   const wallBonus = zone.wallBonus;
 
-  // AA battery reduces air attack power (applied before damage calc)
-  const hasAirAttack = attackers.some(u => UNIT_STATS[u.unitType].requiresAirfield);
-  const aaBuff = zone.hasAABattery && hasAirAttack ? 50 : 0;
-
-  return Math.round(unitDefense + fortBonus + wallBonus + aaBuff);
+  return Math.round(unitDefense + fortBonus + wallBonus);
 }
 
 /** Apply casualties to a force. Max 30% of units can be lost per round. */
@@ -409,7 +404,7 @@ export function resolveBattleRound(params: {
   const atkPower  = calcTotalAttack(attackers, defenders, attackerResearch);
   const defPower  = calcTotalDefense(defenders, zone, attackers);
   const atkDefPow = calcTotalAttack(defenders, attackers, defenderResearch);
-  const atkAtkDef = calcTotalDefense(attackers, { fortificationLevel: 0, wallBonus: 0, hasAABattery: false }, defenders);
+  const atkAtkDef = calcTotalDefense(attackers, { fortificationLevel: 0, wallBonus: 0 }, defenders);
 
   const damageToDefenders = Math.round((atkPower / Math.max(defPower, 1)) * 100);
   const damageToAttackers = Math.round((atkDefPow / Math.max(atkAtkDef, 1)) * 100);

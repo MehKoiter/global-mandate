@@ -284,6 +284,8 @@ model Battle {
   @@index([zoneId])
   @@index([attackerPlayerId])
   @@index([outcome])
+  @@index([resolvedAt, attackerPlayerId])
+  @@index([resolvedAt, defenderPlayerId])
 }
 
 model BattleRound {

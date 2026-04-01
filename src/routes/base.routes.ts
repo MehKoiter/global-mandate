@@ -5,6 +5,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { BuildingType }               from "@prisma/client";
+import { z }                          from "zod";
 import { prisma }                     from "../lib/prisma.js";
 import { calculateResources }         from "../lib/resources.js";
 import { recalculateNetFlow }         from "../lib/netflow.js";
@@ -12,6 +13,17 @@ import { getBuildingUpgradeCost, getConstructionTimeMinutes, BARRACKS_UNIT_UNLOC
 import { publishPlayerEvent, enqueueTrainCompletion, enqueueBuildCompletion } from "../lib/redis.js";
 import { UNIT_STATS }                 from "../lib/combat.js";
 import type { UnitType }              from "../lib/combat.js";
+
+// ─── Request schemas ───────────────────────────────────────────
+
+const BuildingTypeSchema = z.nativeEnum(BuildingType);
+
+const UpgradeBody   = z.object({ buildingType: BuildingTypeSchema });
+const ConstructBody = z.object({ buildingType: BuildingTypeSchema });
+const TrainBody     = z.object({
+  unitType: z.string().min(1),
+  quantity: z.number().int().min(1).max(50).default(1),
+});
 
 export async function baseRoutes(fastify: FastifyInstance) {
   // GET /api/v1/base — returns FOB buildings and their status
@@ -34,21 +46,15 @@ export async function baseRoutes(fastify: FastifyInstance) {
   });
 
   // POST /api/v1/base/upgrade — start a building upgrade
-  fastify.post<{
-    Body: { buildingType: string };
-  }>("/base/upgrade", {
+  fastify.post("/base/upgrade", {
     preHandler: fastify.authenticate,
   }, async (req, reply) => {
     const { playerId } = req.user;
-    const { buildingType } = req.body;
-
-    if (!buildingType) {
-      return reply.status(400).send({ error: "buildingType is required" });
+    const parsed = UpgradeBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
     }
-    if (!(buildingType in BuildingType)) {
-      return reply.status(400).send({ error: "Invalid buildingType" });
-    }
-    const bType = buildingType as BuildingType;
+    const { buildingType: bType } = parsed.data;
 
     const player = await calculateResources(playerId);
     const fob    = await prisma.fOB.findUnique({
@@ -92,31 +98,47 @@ export async function baseRoutes(fastify: FastifyInstance) {
       });
     });
 
+    try {
+      await enqueueBuildCompletion({
+        buildingId:   building.id,
+        fobId:        fob.id,
+        playerId,
+        buildingType: bType,
+        newLevel:     building.level + 1,
+        completesAt:  upgradeEndsAt.getTime(),
+      });
+    } catch (err) {
+      // Redis is down — rollback the building state so it isn't stuck upgrading forever
+      await prisma.building.update({
+        where: { id: building.id },
+        data:  { isUpgrading: false, upgradeEndsAt: null },
+      });
+      fastify.log.error({ err, buildingId: building.id }, "Failed to enqueue build job; upgrade rolled back");
+      return reply.status(503).send({ error: "Queue unavailable — please try again" });
+    }
+
     await recalculateNetFlow(playerId);
 
     await publishPlayerEvent(playerId, "BUILDING_UPGRADE_STARTED", {
-      buildingType,
-      newLevel:    building.level + 1,
-      completesAt: upgradeEndsAt.toISOString(),
-      message:     `${buildingType.replace(/_/g, " ")} upgrade to Level ${building.level + 1} started`,
+      buildingType: bType,
+      newLevel:     building.level + 1,
+      completesAt:  upgradeEndsAt.toISOString(),
+      message:      `${bType.replace(/_/g, " ")} upgrade to Level ${building.level + 1} started`,
     });
 
     return reply.send({ building: updatedBuilding, upgradeEndsAt });
   });
 
   // POST /api/v1/base/construct — build a new building (not yet in the FOB)
-  fastify.post<{
-    Body: { buildingType: string };
-  }>("/base/construct", {
+  fastify.post("/base/construct", {
     preHandler: fastify.authenticate,
   }, async (req, reply) => {
     const { playerId } = req.user;
-    const { buildingType } = req.body;
-
-    if (!buildingType || !(buildingType in BuildingType)) {
-      return reply.status(400).send({ error: "Invalid buildingType" });
+    const parsed = ConstructBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
     }
-    const bType = buildingType as BuildingType;
+    const { buildingType: bType } = parsed.data;
 
     const cost = getBuildingUpgradeCost(bType, 0); // cost to go from 0 → 1
     if (!cost) return reply.status(400).send({ error: "This building type cannot be constructed" });
@@ -155,19 +177,26 @@ export async function baseRoutes(fastify: FastifyInstance) {
       });
     });
 
-    await enqueueBuildCompletion({
-      buildingId:   building.id,
-      fobId:        fob.id,
-      playerId,
-      buildingType: bType,
-      newLevel:     1,
-      completesAt:  constructionEndsAt.getTime(),
-    });
+    try {
+      await enqueueBuildCompletion({
+        buildingId:   building.id,
+        fobId:        fob.id,
+        playerId,
+        buildingType: bType,
+        newLevel:     1,
+        completesAt:  constructionEndsAt.getTime(),
+      });
+    } catch (err) {
+      // Redis is down — delete the building row so the player isn't charged with nothing to show
+      await prisma.building.delete({ where: { id: building.id } });
+      fastify.log.error({ err, buildingType: bType }, "Failed to enqueue construction job; creation rolled back");
+      return reply.status(503).send({ error: "Queue unavailable — please try again" });
+    }
 
     await publishPlayerEvent(playerId, "BUILDING_CONSTRUCTED", {
-      buildingType,
-      completesAt: constructionEndsAt.toISOString(),
-      message: `${buildingType.replace(/_/g, " ")} construction started`,
+      buildingType: bType,
+      completesAt:  constructionEndsAt.toISOString(),
+      message:      `${bType.replace(/_/g, " ")} construction started`,
     });
 
     return reply.status(201).send({ building, constructionEndsAt });
@@ -187,16 +216,15 @@ export async function baseRoutes(fastify: FastifyInstance) {
   });
 
   // POST /api/v1/base/train — start training a unit
-  fastify.post<{
-    Body: { unitType: string; quantity?: number };
-  }>("/base/train", {
+  fastify.post("/base/train", {
     preHandler: fastify.authenticate,
   }, async (req, reply) => {
     const { playerId } = req.user;
-    const { unitType, quantity = 1 } = req.body;
-
-    if (!unitType) return reply.status(400).send({ error: "unitType is required" });
-    if (quantity < 1 || quantity > 50) return reply.status(400).send({ error: "quantity must be between 1 and 50" });
+    const parsed = TrainBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+    const { unitType, quantity } = parsed.data;
 
     const stats = UNIT_STATS[unitType as UnitType];
     if (!stats) return reply.status(400).send({ error: "Invalid unitType" });
