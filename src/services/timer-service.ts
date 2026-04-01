@@ -173,7 +173,6 @@ async function resolveNextRound(battleId: string): Promise<void> {
   const zoneDef: ZoneDefense = {
     fortificationLevel: zone.fortificationLevel,
     wallBonus:          zone.wallBonus,
-    hasAABattery:       false, // TODO: derive from zone buildings
   };
 
   if (atkCombat.length === 0) {

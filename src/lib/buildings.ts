@@ -41,8 +41,8 @@ function round50(n: number): number {
 }
 
 // level 2 = 15 min, each subsequent level ×1.25, rounded to whole minutes
-// TEST_FAST_BUILD: set to true to use 10-second build times for all buildings
-const TEST_FAST_BUILD = true;
+// TEST_FAST_BUILD: set TEST_FAST_BUILD=true in .env to use 10-second build times
+const TEST_FAST_BUILD = process.env["TEST_FAST_BUILD"] === "true";
 
 function buildTimeMinutes(level: number): number {
   if (level <= 1) return 0; // level 1 is placed instantly (starter building)
