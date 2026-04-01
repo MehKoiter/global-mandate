@@ -19,6 +19,7 @@ import {
 import type { TravelQueueEntry, BuildQueueEntry, TrainQueueEntry } from "../lib/redis.js";
 import { resolveBattleRound, UNIT_STATS } from "../lib/combat.js";
 import type { CombatUnit, ZoneDefense, UnitType } from "../lib/combat.js";
+import { getBuildingRationsProduction } from "../lib/buildings.js";
 
 // Minimal unit shape until `prisma generate` is run with a schema.prisma
 type DbUnit = {
@@ -416,6 +417,20 @@ export async function processResourceTick(): Promise<void> {
     t.rations += Math.floor(z.rationsPerHour / 60);
     t.steel   += Math.floor(z.steelPerHour / 60);
     t.credits += Math.floor(z.creditsPerHour / 60);
+  }
+
+  // Apply building rations production (e.g. Hydro Bay)
+  const allFobs = await prisma.fOB.findMany({
+    include: { buildings: { where: { isOperational: true } } },
+  });
+  for (const fob of allFobs) {
+    if (!totals[fob.playerId]) totals[fob.playerId] = { fuel: 0, rations: 0, steel: 0, credits: 0 };
+    for (const building of fob.buildings) {
+      const rationsProd = getBuildingRationsProduction(building.buildingType, building.level);
+      if (rationsProd > 0) {
+        totals[fob.playerId]!.rations += Math.floor(rationsProd / 60);
+      }
+    }
   }
 
   // Apply rations upkeep (subtract army cost)

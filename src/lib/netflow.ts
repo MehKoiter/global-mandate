@@ -15,6 +15,7 @@ import { BuildingType } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { redis } from "./redis.js";
 import { UNIT_STATS, type UnitType } from "./combat.js";
+import { getBuildingRationsProduction } from "./buildings.js";
 
 // The trade agreement boost key — mirrors diplomacy.ts's DiplomacyKeys.tradeBoost.
 // Read directly from Redis here to avoid a lib → services import dependency.
@@ -94,13 +95,14 @@ export async function recalculateNetFlow(playerId: string): Promise<void> {
     if (stats) rationsDrain += stats.rationsUpkeepPerHr * unit.quantity;
   }
 
-  // ── Building maintenance — fuel drain ─────────────────────────
-  // Only operational buildings consume maintenance fuel.
-  // Non-operational buildings (isOperational = false) are offline and cost nothing.
-  let buildingFuelDrain = 0;
+  // ── Building production & maintenance ────────────────────────
+  // Operational buildings may produce resources and drain maintenance fuel.
+  let buildingFuelDrain   = 0;
+  let buildingRationsProd = 0;
   for (const building of player.fob?.buildings ?? []) {
     if (building.isOperational) {
-      buildingFuelDrain += building.maintenanceFuelPerHour;
+      buildingFuelDrain   += building.maintenanceFuelPerHour;
+      buildingRationsProd += getBuildingRationsProduction(building.buildingType, building.level);
     }
   }
 
@@ -110,7 +112,7 @@ export async function recalculateNetFlow(playerId: string): Promise<void> {
     where: { id: playerId },
     data: {
       fuelNetPerHour:    fuelProd    - buildingFuelDrain,
-      rationsNetPerHour: rationsProd - rationsDrain,
+      rationsNetPerHour: rationsProd + buildingRationsProd - rationsDrain,
       steelNetPerHour:   steelProd,
       creditsNetPerHour: creditsProd,
     },
