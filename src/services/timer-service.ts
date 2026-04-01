@@ -5,6 +5,7 @@
 // =============================================================
 
 import { prisma } from "../lib/prisma.js";
+import { recalculateNetFlow } from "../lib/netflow.js";
 import {
   dequeueDueArrivals,
   dequeueDueBuilds,
@@ -371,6 +372,10 @@ async function handleBuildComplete(entry: BuildQueueEntry): Promise<void> {
       data: { maxCommandPoints: newMaxCP },
     });
   }
+
+  // Recalculate net resource flow so the new building level is reflected
+  // in the player's displayed rates (e.g. Hydro Bay rations production).
+  await recalculateNetFlow(entry.playerId);
 
   await publishPlayerEvent(entry.playerId, "BUILDING_UPGRADE_COMPLETED", {
     buildingId:   entry.buildingId,
