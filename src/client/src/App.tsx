@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, upgradeBuilding, constructBuilding, getTraining, trainUnit, openWs, TOKEN_KEY } from "./api.js";
-import type { PlayerStatus, FOB, WsMessage, TrainingUnit } from "./types.js";
+import type { Building, PlayerStatus, FOB, WsMessage, TrainingUnit } from "./types.js";
 import { StatusHeader }   from "./components/StatusHeader.js";
 import { BuildingList }   from "./components/BuildingList.js";
+import { BuildingDetail } from "./components/BuildingDetail.js";
 import { AlertFeed }      from "./components/AlertFeed.js";
-import { BarracksPanel }  from "./components/BarracksPanel.js";
 
 // ─── Login screen ──────────────────────────────────────────────
 
@@ -99,11 +99,12 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
 const MAX_ALERTS = 100;
 
 function Dashboard({ onLogout }: { onLogout: () => void }) {
-  const [player,   setPlayer]   = useState<PlayerStatus | null>(null);
-  const [fob,      setFob]      = useState<FOB | null>(null);
-  const [training, setTraining] = useState<TrainingUnit[]>([]);
-  const [alerts,   setAlerts]   = useState<WsMessage[]>([]);
-  const [error,    setError]    = useState<string | null>(null);
+  const [player,           setPlayer]           = useState<PlayerStatus | null>(null);
+  const [fob,              setFob]              = useState<FOB | null>(null);
+  const [training,         setTraining]         = useState<TrainingUnit[]>([]);
+  const [alerts,           setAlerts]           = useState<WsMessage[]>([]);
+  const [error,            setError]            = useState<string | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
 
   const addAlert = useCallback((msg: WsMessage) => {
     setAlerts(prev => [...prev.slice(-(MAX_ALERTS - 1)), msg]);
@@ -124,8 +125,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(id);
   }, []);
 
-  // Poll training queue every 10 s so completions show even if the WS event
-  // was missed (e.g. timer service restarted mid-training)
+  // Poll training queue every 10 s
   useEffect(() => {
     const id = setInterval(() => {
       getTraining().then(t => setTraining(t.training)).catch(() => null);
@@ -137,17 +137,21 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const ws = openWs((msg) => {
       addAlert(msg);
-      // Refresh player on resource-affecting events
       if (["ZONE_CAPTURED", "BATTLE_RESOLVED", "UNIT_ARRIVED"].includes(msg.type)) {
         getPlayerStatus().then(setPlayer).catch(() => null);
       }
-      // Refresh both player and FOB when a building upgrade or construction completes
       if (msg.type === "BUILDING_UPGRADE_COMPLETED" || msg.type === "BUILDING_CONSTRUCTION_COMPLETED") {
         Promise.all([getPlayerStatus(), getBase()])
-          .then(([p, b]) => { setPlayer(p); setFob(b.fob); })
+          .then(([p, b]) => {
+            setPlayer(p);
+            setFob(b.fob);
+            // Keep selectedBuilding in sync with the refreshed FOB data
+            setSelectedBuilding(prev =>
+              prev ? (b.fob.buildings.find(bl => bl.id === prev.id) ?? prev) : null,
+            );
+          })
           .catch(() => null);
       }
-      // Refresh training queue on training events
       if (msg.type === "UNIT_TRAINING_STARTED" || msg.type === "UNIT_TRAINED") {
         Promise.all([getPlayerStatus(), getTraining()])
           .then(([p, t]) => { setPlayer(p); setTraining(t.training); })
@@ -158,9 +162,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   }, [addAlert]);
 
   const S: Record<string, React.CSSProperties> = {
-    shell: { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" },
-    main:  { flex: 1, overflowY: "auto" },
-    divider: { borderTop: "1px solid #1a1a1a", margin: "0 0 0" },
+    shell:   { display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" },
     topbar: {
       display: "flex", justifyContent: "flex-end",
       padding: "6px 20px", borderBottom: "1px solid #1a1a1a",
@@ -170,7 +172,24 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       background: "none", border: "none", color: "#444", cursor: "pointer",
       fontSize: 11, fontFamily: "inherit", letterSpacing: 1, textTransform: "uppercase",
     },
-    error: { padding: "12px 20px", color: "#f44336", fontSize: 12 },
+    // Row splits the main area into list + detail panes
+    contentRow: { flex: 1, display: "flex", overflow: "hidden" },
+    // Left pane: narrow when a building is selected, full-width otherwise
+    leftPane: {
+      display: "flex", flexDirection: "column", overflow: "hidden",
+      transition: "width 0.2s ease",
+      width: selectedBuilding ? 180 : "100%",
+      minWidth: selectedBuilding ? 180 : undefined,
+      maxWidth: selectedBuilding ? 180 : undefined,
+      borderRight: selectedBuilding ? "1px solid #1a1a1a" : "none",
+      flexShrink: 0,
+    },
+    leftScroll:  { overflowY: "auto", flex: 1 },
+    // Right pane: building detail + alert feed
+    rightPane:   { flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" },
+    rightScroll: { flex: 1, overflowY: "auto" },
+    divider:     { borderTop: "1px solid #1a1a1a" },
+    error:       { padding: "12px 20px", color: "#f44336", fontSize: 12 },
   };
 
   if (error) return <div style={S.error}>⚠ {error}</div>;
@@ -181,51 +200,75 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         <button style={S.logoutBtn} onClick={onLogout}>Disconnect</button>
       </div>
       {player && <StatusHeader player={player} />}
-      <div style={S.main}>
-        {fob && player && (
-          <BuildingList
-            buildings={fob.buildings}
-            steel={player.steel}
-            credits={player.credits}
-            onUpgrade={async (buildingType) => {
-              const { building } = await upgradeBuilding(buildingType);
-              setFob(prev => prev && {
-                ...prev,
-                buildings: prev.buildings.map(b => b.id === building.id ? building : b),
-              });
-              const updated = await getPlayerStatus();
-              setPlayer(updated);
-            }}
-            onConstruct={async (buildingType) => {
-              const { building } = await constructBuilding(buildingType);
-              setFob(prev => prev && { ...prev, buildings: [...prev.buildings, building] });
-              const updated = await getPlayerStatus();
-              setPlayer(updated);
-            }}
-          />
-        )}
-        {fob && player && (() => {
-          const barracks = fob.buildings.find(b => b.buildingType === "BARRACKS");
-          if (!barracks || !barracks.isOperational) return null;
-          return (
-            <BarracksPanel
-              barrackLevel={barracks.level}
-              training={training}
-              fuel={player.fuel}
-              rations={player.rations}
-              steel={player.steel}
-              credits={player.credits}
-              onTrain={async (unitType, quantity) => {
-                await trainUnit(unitType, quantity);
-                const [p, t] = await Promise.all([getPlayerStatus(), getTraining()]);
-                setPlayer(p);
-                setTraining(t.training);
-              }}
-            />
-          );
-        })()}
-        <div style={S.divider} />
-        <AlertFeed alerts={alerts} />
+
+      <div style={S.contentRow}>
+        {/* Left pane — building list (grid or collapsed) */}
+        <div style={S.leftPane}>
+          <div style={S.leftScroll}>
+            {fob && player && (
+              <BuildingList
+                buildings={fob.buildings}
+                steel={player.steel}
+                credits={player.credits}
+                selectedId={selectedBuilding?.id}
+                onSelect={setSelectedBuilding}
+                onConstruct={async (buildingType) => {
+                  const { building } = await constructBuilding(buildingType);
+                  setFob(prev => prev && { ...prev, buildings: [...prev.buildings, building] });
+                  const updated = await getPlayerStatus();
+                  setPlayer(updated);
+                }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Right pane — building detail or alert feed */}
+        <div style={S.rightPane}>
+          <div style={S.rightScroll}>
+            {selectedBuilding && player ? (
+              <BuildingDetail
+                building={selectedBuilding}
+                steel={player.steel}
+                credits={player.credits}
+                fuel={player.fuel}
+                rations={player.rations}
+                training={training}
+                onUpgrade={async (buildingType) => {
+                  const { building } = await upgradeBuilding(buildingType);
+                  setFob(prev => prev && {
+                    ...prev,
+                    buildings: prev.buildings.map(b => b.id === building.id ? building : b),
+                  });
+                  setSelectedBuilding(building);
+                  const updated = await getPlayerStatus();
+                  setPlayer(updated);
+                }}
+                onTrain={async (unitType, quantity) => {
+                  await trainUnit(unitType, quantity);
+                  const [p, t] = await Promise.all([getPlayerStatus(), getTraining()]);
+                  setPlayer(p);
+                  setTraining(t.training);
+                }}
+                onBack={() => setSelectedBuilding(null)}
+              />
+            ) : (
+              <>
+                <div style={S.divider} />
+                <AlertFeed alerts={alerts} />
+              </>
+            )}
+          </div>
+          {/* Alert feed always visible below detail when a building is open */}
+          {selectedBuilding && (
+            <>
+              <div style={S.divider} />
+              <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                <AlertFeed alerts={alerts} />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -241,7 +284,6 @@ export default function App() {
     setAuthed(false);
   }
 
-  // Remove token from URL if present (e.g. redirect from OAuth)
   useEffect(() => {
     const stored = localStorage.getItem(TOKEN_KEY);
     if (stored) setAuthed(true);
