@@ -8,20 +8,8 @@ import { BuildingType }               from "@prisma/client";
 import { prisma }                     from "../lib/prisma.js";
 import { calculateResources }         from "../lib/resources.js";
 import { recalculateNetFlow }         from "../lib/netflow.js";
-
-// Upgrade costs per building level (indexed by current level → cost to reach next)
-const UPGRADE_COST: Record<BuildingType, { steel: number; credits: number; fuel: number }> = {
-  COMMAND_CENTER:    { steel: 300, credits: 500, fuel: 100 },
-  COMM_CENTER:       { steel: 200, credits: 300, fuel:  50 },
-  WAREHOUSE:         { steel: 150, credits: 200, fuel:  30 },
-  TOC:               { steel: 250, credits: 400, fuel:  80 },
-  LIGHT_VEHICLE_SHOP:{ steel: 400, credits: 600, fuel: 120 },
-  HEAVY_FACTORY:     { steel: 600, credits: 900, fuel: 200 },
-  RADIO_TOWER:       { steel: 180, credits: 250, fuel:  40 },
-  BUNKER:            { steel: 350, credits: 450, fuel:  90 },
-  HYDRO_BAY:         { steel: 200, credits: 280, fuel:  60 },
-};
-const UPGRADE_TIME_S = 3600; // 1 hour per level
+import { getBuildingUpgradeCost }     from "../lib/buildings.js";
+import { publishPlayerEvent }         from "../lib/redis.js";
 
 export async function baseRoutes(fastify: FastifyInstance) {
   // GET /api/v1/base — returns FOB buildings and their status
@@ -67,41 +55,51 @@ export async function baseRoutes(fastify: FastifyInstance) {
     });
     if (!fob) return reply.status(404).send({ error: "FOB not found" });
 
+    const anyUpgrading = fob.buildings.some(b => b.isUpgrading);
+    if (anyUpgrading) return reply.status(409).send({ error: "Another building is already upgrading" });
+
     const building = fob.buildings.find(b => b.buildingType === bType);
     if (!building) return reply.status(404).send({ error: "Building not found in your FOB" });
-    if (building.isUpgrading) return reply.status(409).send({ error: "Building is already upgrading" });
 
-    const cost = UPGRADE_COST[bType];
-    if (
-      player.steel   < cost.steel   ||
-      player.credits < cost.credits ||
-      player.fuel    < cost.fuel
-    ) {
+    const cost = getBuildingUpgradeCost(bType, building.level);
+    if (!cost) {
+      return reply.status(409).send({ error: "Building is already at max level" });
+    }
+
+    if (player.steel < cost.steelCost || player.credits < cost.creditCost) {
       return reply.status(402).send({
-        error: "Insufficient resources",
-        required: cost,
-        available: { steel: player.steel, credits: player.credits, fuel: player.fuel },
+        error:     "Insufficient resources",
+        required:  { steel: cost.steelCost, credits: cost.creditCost },
+        available: { steel: player.steel,   credits: player.credits },
       });
     }
 
-    const upgradeEndsAt = new Date(Date.now() + UPGRADE_TIME_S * building.level * 1000);
+    const upgradeEndsAt = new Date(Date.now() + cost.buildTimeMinutes * 60 * 1000);
 
-    await prisma.$transaction([
-      prisma.player.update({
+    const updatedBuilding = await prisma.$transaction(async (tx) => {
+      await tx.player.update({
         where: { id: playerId },
         data: {
-          steel:   player.steel   - cost.steel,
-          credits: player.credits - cost.credits,
-          fuel:    player.fuel    - cost.fuel,
+          steel:   { decrement: cost.steelCost   },
+          credits: { decrement: cost.creditCost  },
         },
-      }),
-      prisma.building.update({
+      });
+      return tx.building.update({
         where: { id: building.id },
-        data: { isUpgrading: true, upgradeEndsAt },
-      }),
-    ]);
+        data:  { isUpgrading: true, upgradeEndsAt },
+      });
+    });
 
-    return reply.send({ message: "Upgrade started", upgradeEndsAt });
+    await recalculateNetFlow(playerId);
+
+    await publishPlayerEvent(playerId, "BUILDING_UPGRADE_STARTED", {
+      buildingType,
+      newLevel:    building.level + 1,
+      completesAt: upgradeEndsAt.toISOString(),
+      message:     `${buildingType.replace(/_/g, " ")} upgrade to Level ${building.level + 1} started`,
+    });
+
+    return reply.send({ building: updatedBuilding, upgradeEndsAt });
   });
 
   // GET /api/v1/base/bunker — lists units currently sheltered in the FOB bunker

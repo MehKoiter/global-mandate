@@ -353,10 +353,11 @@ async function handleBuildComplete(entry: BuildQueueEntry): Promise<void> {
     });
   }
 
-  await publishPlayerEvent(entry.playerId, "BUILD_COMPLETE", {
+  await publishPlayerEvent(entry.playerId, "BUILDING_UPGRADE_COMPLETED", {
     buildingId:   entry.buildingId,
     buildingType: entry.buildingType,
     newLevel:     entry.newLevel,
+    message:      `${entry.buildingType.replace(/_/g, " ")} upgraded to Level ${entry.newLevel}`,
   });
 }
 

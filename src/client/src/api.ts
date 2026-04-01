@@ -58,6 +58,13 @@ export async function getBase(): Promise<{ fob: FOB }> {
   return apiFetch<{ fob: FOB }>("/base");
 }
 
+export async function upgradeBuilding(buildingType: string): Promise<{ building: FOB["buildings"][number]; upgradeEndsAt: string }> {
+  return apiFetch("/base/upgrade", {
+    method: "POST",
+    body:   JSON.stringify({ buildingType }),
+  });
+}
+
 // ─── WebSocket ─────────────────────────────────────────────────
 
 export function openWs(onMessage: (msg: import("./types.js").WsMessage) => void): WebSocket {

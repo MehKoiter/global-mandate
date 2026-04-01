@@ -14,7 +14,9 @@ const EVENT_COLORS: Record<string, string> = {
   DIPLOMACY_ACCEPTED:    "#26c6da",
   NAP_BROKEN:            "#ef5350",
   STATUS_FLAGGED:        "#ef9a9a",
-  CONNECTED:             "#555",
+  BUILDING_UPGRADE_STARTED:    "#f57c00",
+  BUILDING_UPGRADE_COMPLETED:  "#4caf50",
+  CONNECTED:                   "#555",
 };
 
 function eventColor(type: string): string {

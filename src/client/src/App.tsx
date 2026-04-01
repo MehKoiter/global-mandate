@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, openWs, TOKEN_KEY } from "./api.js";
+import { register, login, logout, isLoggedIn, getPlayerStatus, getBase, upgradeBuilding, openWs, TOKEN_KEY } from "./api.js";
 import type { PlayerStatus, FOB, WsMessage } from "./types.js";
 import { StatusHeader } from "./components/StatusHeader.js";
 import { BuildingList }  from "./components/BuildingList.js";
@@ -130,7 +130,22 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </div>
       {player && <StatusHeader player={player} />}
       <div style={S.main}>
-        {fob && <BuildingList buildings={fob.buildings} />}
+        {fob && player && (
+          <BuildingList
+            buildings={fob.buildings}
+            steel={player.steel}
+            credits={player.credits}
+            onUpgrade={async (buildingType) => {
+              const { building } = await upgradeBuilding(buildingType);
+              setFob(prev => prev && {
+                ...prev,
+                buildings: prev.buildings.map(b => b.id === building.id ? building : b),
+              });
+              const updated = await getPlayerStatus();
+              setPlayer(updated);
+            }}
+          />
+        )}
         <div style={S.divider} />
         <AlertFeed alerts={alerts} />
       </div>
