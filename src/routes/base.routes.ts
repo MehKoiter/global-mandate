@@ -8,7 +8,7 @@ import { BuildingType }               from "@prisma/client";
 import { prisma }                     from "../lib/prisma.js";
 import { calculateResources }         from "../lib/resources.js";
 import { recalculateNetFlow }         from "../lib/netflow.js";
-import { getBuildingUpgradeCost, getConstructionTimeMinutes } from "../lib/buildings.js";
+import { getBuildingUpgradeCost, getConstructionTimeMinutes, BARRACKS_UNIT_UNLOCK } from "../lib/buildings.js";
 import { publishPlayerEvent, enqueueTrainCompletion, enqueueBuildCompletion } from "../lib/redis.js";
 import { UNIT_STATS }                 from "../lib/combat.js";
 import type { UnitType }              from "../lib/combat.js";
@@ -212,6 +212,13 @@ export async function baseRoutes(fastify: FastifyInstance) {
     if (!barracks) return reply.status(409).send({ error: "No Barracks built. Build a Barracks first." });
     if (!barracks.isOperational) return reply.status(409).send({ error: "Barracks is offline" });
     if (barracks.isUpgrading) return reply.status(409).send({ error: "Barracks is being upgraded" });
+
+    const requiredLevel = BARRACKS_UNIT_UNLOCK[unitType] ?? 1;
+    if (barracks.level < requiredLevel) {
+      return reply.status(409).send({
+        error: `${stats.displayName} requires Barracks level ${requiredLevel} (yours is level ${barracks.level})`,
+      });
+    }
 
     // Check training queue capacity (barracks level = max concurrent)
     const inTraining = await prisma.unit.count({ where: { ownerId: playerId, status: "TRAINING" } });

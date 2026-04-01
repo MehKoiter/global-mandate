@@ -14,44 +14,44 @@ interface Props {
 // ── Infantry units trainable in a Barracks ────────────────────
 const INFANTRY_UNITS = [
   {
-    unitType:       "INFANTRY_GRUNT",
-    displayName:    "Infantry Squad",
-    tier:           1,
+    unitType:      "INFANTRY_GRUNT",
+    displayName:   "Infantry Squad",
+    tier:          1,
     unlocksAtLevel: 1,
-    cost:           { fuel: 0, rations: 20, steel: 0,  credits: 50  },
-    timeSec:        300,
-    cp:             1,
-    desc:           "Basic infantry. Effective vs APCs.",
+    cost:          { fuel: 0, rations: 20, steel: 0,  credits: 50  },
+    timeSec:       300,
+    cp:            1,
+    desc:          "Basic infantry. Effective vs APCs.",
   },
   {
-    unitType:       "SPECIAL_FORCES",
-    displayName:    "Special Forces",
-    tier:           2,
+    unitType:      "SPECIAL_FORCES",
+    displayName:   "Special Forces",
+    tier:          2,
     unlocksAtLevel: 2,
-    cost:           { fuel: 0, rations: 60, steel: 20, credits: 200 },
-    timeSec:        1800,
-    cp:             3,
-    desc:           "Elite soldiers. Counters grunts and APCs.",
+    cost:          { fuel: 0, rations: 60, steel: 20, credits: 200 },
+    timeSec:       1800,
+    cp:            3,
+    desc:          "Elite soldiers. Counters grunts and APCs.",
   },
   {
-    unitType:       "RANGERS",
-    displayName:    "Rangers",
-    tier:           2,
+    unitType:      "RANGERS",
+    displayName:   "Rangers",
+    tier:          2,
     unlocksAtLevel: 5,
-    cost:           { fuel: 0, rations: 50, steel: 10, credits: 150 },
-    timeSec:        1200,
-    cp:             2,
-    desc:           "Fast light infantry with high mobility.",
+    cost:          { fuel: 0, rations: 50, steel: 10, credits: 150 },
+    timeSec:       1200,
+    cp:            2,
+    desc:          "Fast light infantry with high mobility.",
   },
   {
-    unitType:       "MARSOC_ATGM",
-    displayName:    "MARSOC ATGM",
-    tier:           2,
+    unitType:      "MARSOC_ATGM",
+    displayName:   "MARSOC ATGM",
+    tier:          2,
     unlocksAtLevel: 10,
-    cost:           { fuel: 0, rations: 40, steel: 30, credits: 180 },
-    timeSec:        1500,
-    cp:             2,
-    desc:           "Anti-tank specialists. Lethal vs armour.",
+    cost:          { fuel: 0, rations: 40, steel: 30, credits: 180 },
+    timeSec:       1500,
+    cp:            2,
+    desc:          "Anti-tank specialists. Lethal vs armour.",
   },
 ];
 
@@ -179,17 +179,21 @@ export function BarracksPanel({ barrackLevel, training, fuel, rations, steel, cr
           const locked    = barrackLevel < u.unlocksAtLevel;
           const q         = qty(u.unitType);
           const totalCost = {
+          const locked      = barrackLevel < u.unlocksAtLevel;
+          const q           = qty(u.unitType);
+          const totalCost   = {
             fuel:    u.cost.fuel    * q,
             rations: u.cost.rations * q,
             steel:   u.cost.steel   * q,
             credits: u.cost.credits * q,
           };
-          const canAfford = fuel    >= totalCost.fuel    &&
-                            rations >= totalCost.rations &&
-                            steel   >= totalCost.steel   &&
-                            credits >= totalCost.credits;
-          const disabled  = locked || queueFull || !canAfford || pending !== null;
-          const cardStyle = locked ? { ...S.card, opacity: 0.45, borderColor: "#1a1a1a" } : S.card;
+          const canAfford   = fuel    >= totalCost.fuel    &&
+                              rations >= totalCost.rations &&
+                              steel   >= totalCost.steel   &&
+                              credits >= totalCost.credits;
+          const disabled    = locked || queueFull || !canAfford || pending !== null;
+
+          const cardStyle   = locked ? { ...S.card, opacity: 0.45, borderColor: "#1a1a1a" } : S.card;
 
           return (
             <div key={u.unitType} style={cardStyle}>
