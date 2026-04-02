@@ -20,10 +20,23 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Auth ──────────────────────────────────────────────────────
 
-export async function register(username: string, email: string, password: string): Promise<string> {
+export interface AvailableStart {
+  id:          string;
+  name:        string;
+  terrainType: string;
+  q:           number;
+  r:           number;
+  sector:      { name: string };
+}
+
+export async function getAvailableStarts(): Promise<{ zones: AvailableStart[] }> {
+  return apiFetch("/player/available-starts");
+}
+
+export async function register(username: string, email: string, password: string, zoneId: string): Promise<string> {
   const data = await apiFetch<{ token: string }>("/player/register", {
     method: "POST",
-    body:   JSON.stringify({ username, email, password }),
+    body:   JSON.stringify({ username, email, password, zoneId }),
   });
   localStorage.setItem(TOKEN_KEY, data.token);
   return data.token;

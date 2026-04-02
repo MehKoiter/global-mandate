@@ -216,11 +216,16 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
     const maxR = Math.max(...zs.map(z => z.r)) + 2;
 
     // ── Layer 1: background terrain (non-interactive) ──────────
+    // Axial hex coords skew right as r increases (parallelogram effect).
+    // Compensate by adjusting qMin/qMax per row so the visual boundary
+    // is rectangular: at low r, extend q right; at high r, extend q left.
     const bgContainer = new Container();
     world.addChild(bgContainer);
 
-    for (let q = minQ; q <= maxQ; q++) {
-      for (let r = minR; r <= maxR; r++) {
+    for (let r = minR; r <= maxR; r++) {
+      const qMin = Math.floor(minQ + (minR - r) / 2);
+      const qMax = Math.ceil(maxQ  + (maxR - r) / 2);
+      for (let q = qMin; q <= qMax; q++) {
         const terrain = noiseToTerrain(q, r);
         const { x, y } = axialToPixel(q, r);
         const gfx = new Graphics();
@@ -363,10 +368,42 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
     }, { passive: false });
   }
 
+  function centerOnFob() {
+    const app   = appRef.current;
+    const world = worldRef.current;
+    if (!app || !world) return;
+    const fobZone = zonesRef.current.find(z => z.id === fobZoneIdRef.current);
+    if (!fobZone) return;
+    const { x, y } = axialToPixel(fobZone.q, fobZone.r);
+    world.position.set(
+      app.screen.width  / 2 - x * world.scale.x,
+      app.screen.height / 2 - y * world.scale.y,
+    );
+    // Also open the building panel
+    onZoneClickRef.current(fobZone);
+  }
+
   return (
-    <div
-      ref={containerRef}
-      style={{ width: "100%", height: "100%", overflow: "hidden", background: "#050505" }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <div
+        ref={containerRef}
+        style={{ width: "100%", height: "100%", overflow: "hidden", background: "#050505" }}
+      />
+      {fobZoneId && (
+        <button
+          onClick={centerOnFob}
+          style={{
+            position: "absolute", bottom: 12, right: 12,
+            background: "#0d1a0d", border: "1px solid #2a5a2a",
+            color: "#4caf50", fontSize: 11, fontFamily: "inherit",
+            letterSpacing: 1, textTransform: "uppercase",
+            padding: "6px 12px", cursor: "pointer", borderRadius: 2,
+            zIndex: 10,
+          }}
+        >
+          ◎ FOB
+        </button>
+      )}
+    </div>
   );
 }

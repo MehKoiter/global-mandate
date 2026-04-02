@@ -23,14 +23,35 @@ function verifyPassword(password: string, stored: string): boolean {
 }
 
 export async function playerRoutes(fastify: FastifyInstance) {
+  // GET /api/v1/player/available-starts — no auth required (shown on registration screen)
+  fastify.get("/player/available-starts", async (_req, reply) => {
+    const zones = await prisma.zone.findMany({
+      where: {
+        ownerPlayerId: null,
+        terrainType:   { not: "WATER" },
+        name:          { contains: "Command Post" },
+      },
+      select: {
+        id:          true,
+        name:        true,
+        terrainType: true,
+        q:           true,
+        r:           true,
+        sector:      { select: { name: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+    return reply.send({ zones });
+  });
+
   // POST /api/v1/player/register
   fastify.post<{
-    Body: { username: string; email: string; password: string };
+    Body: { username: string; email: string; password: string; zoneId: string };
   }>("/player/register", async (req, reply) => {
-    const { username, email, password } = req.body;
+    const { username, email, password, zoneId } = req.body;
 
-    if (!username || !email || !password) {
-      return reply.status(400).send({ error: "username, email, and password are required" });
+    if (!username || !email || !password || !zoneId) {
+      return reply.status(400).send({ error: "username, email, password, and zoneId are required" });
     }
     if (password.length < 8) {
       return reply.status(400).send({ error: "Password must be at least 8 characters" });
@@ -44,11 +65,19 @@ export async function playerRoutes(fastify: FastifyInstance) {
       return reply.status(409).send({ error: "Username or email already taken" });
     }
 
-    // Grab the first sector to anchor the FOB zone (world must be seeded)
-    const sector = await prisma.sector.findFirst({ select: { id: true } });
-    if (!sector) {
-      return reply.status(503).send({ error: "World not initialised. Run npm run seed first." });
-    }
+    // Validate the chosen zone is still available
+    const startZone = await prisma.zone.findFirst({
+      where: {
+        id:            zoneId,
+        ownerPlayerId: null,
+        terrainType:   { not: "WATER" },
+        name:          { contains: "Command Post" },
+      },
+      select: { id: true },
+    });
+    if (!startZone) {
+      return reply.status(409).send({ error: "That starting zone is no longer available. Please choose another." });
+    };
 
     const { player } = await prisma.$transaction(async (tx) => {
       const p = await tx.player.create({
@@ -56,21 +85,16 @@ export async function playerRoutes(fastify: FastifyInstance) {
         select: { id: true, username: true, createdAt: true },
       });
 
-      const zone = await tx.zone.create({
-        data: {
-          name:          `${username}'s Command Post`,
-          sectorId:      sector.id,
-          q:             0,
-          r:             0,
-          ownerPlayerId: p.id,
-          capturedAt:    new Date(),
-        },
+      // Claim the chosen Command Post zone
+      await tx.zone.update({
+        where: { id: startZone.id },
+        data:  { ownerPlayerId: p.id, capturedAt: new Date() },
       });
 
       await tx.fOB.create({
         data: {
           playerId: p.id,
-          zoneId:   zone.id,
+          zoneId:   startZone.id,
           buildings: {
             create: [
               { buildingType: "COMMAND_CENTER" },
