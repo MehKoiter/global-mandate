@@ -21,7 +21,8 @@
     "dev": "node scripts/dev.js",
     "dev:server": "tsx watch src/server.ts",
     "dev:timer": "tsx watch src/services/timer-master.ts",
-    "seed": "tsx src/scripts/seed-world.ts"
+    "seed": "tsx src/scripts/seed-world.ts",
+    "wipe": "tsx src/scripts/wipe-db.ts --confirm"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

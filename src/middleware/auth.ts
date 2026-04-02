@@ -4,6 +4,7 @@
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import "@fastify/jwt";
+import { prisma } from "../lib/prisma.js";
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
@@ -24,7 +25,15 @@ export function registerAuth(fastify: FastifyInstance): void {
       try {
         await req.jwtVerify();
       } catch {
-        await reply.status(401).send({ error: "Unauthorized" });
+        return reply.status(401).send({ error: "Unauthorized" });
+      }
+      // Confirm the player still exists — handles wiped DB / deleted accounts
+      const exists = await prisma.player.findUnique({
+        where:  { id: req.user.playerId },
+        select: { id: true },
+      });
+      if (!exists) {
+        return reply.status(401).send({ error: "Session expired — please log in again" });
       }
     },
   );

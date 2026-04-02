@@ -149,7 +149,6 @@ export function BuildingList({ buildings, steel, credits, selectedId, onSelect, 
   // ── Normal: grid ───────────────────────────────────────────────
   return (
     <div style={S.section}>
-      <div style={S.heading}>Forward Operating Base</div>
       <div style={S.grid}>
         {sorted.map((b) => {
           const extraStyle = b.isUpgrading

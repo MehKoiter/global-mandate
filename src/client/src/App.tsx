@@ -299,12 +299,13 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   // ── Zone click handler ─────────────────────────────────────────
   function handleZoneClick(zone: Zone) {
-    setSelectedZone(zone);
     if (fob && zone.id === fob.zoneId) {
       setShowBuildingPanel(true);
+      setSelectedZone(null);      // FOB panel takes over — hide zone panel
     } else {
       setShowBuildingPanel(false);
       setSelectedBuilding(null);
+      setSelectedZone(zone);      // non-FOB zones show zone panel only
     }
   }
 
@@ -321,11 +322,11 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       fontSize: 11, fontFamily: "inherit", letterSpacing: 1, textTransform: "uppercase",
     },
     mapWrapper: { position: "relative", flex: 1, overflow: "hidden" },
-    // FOB building panel — right overlay
+    // FOB building panel — left overlay
     buildingPanel: {
-      position: "absolute", top: 0, right: 0, bottom: 0,
+      position: "absolute", top: 0, left: 0, bottom: 0,
       display: "flex", flexDirection: "column", width: 460,
-      background: "#0d0d0d", borderLeft: "1px solid #1a1a1a",
+      background: "#0d0d0d", borderRight: "1px solid #1a1a1a",
       zIndex: 20,
     },
     buildingPanelHeader: {
@@ -346,7 +347,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   if (error) return <div style={S.error}>⚠ {error}</div>;
 
-  const alertRight = showBuildingPanel ? 468 : 8;
+  const alertRight = 8;
 
   return (
     <div style={S.shell}>
@@ -382,7 +383,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
             <div style={S.buildingPanelBody}>
-              <div style={S.buildingListCol}>
+              <div style={selectedBuilding ? S.buildingListCol : { flex: 1, overflowY: "auto" as const }}>
                 <BuildingList
                   buildings={fob.buildings}
                   steel={player.steel}

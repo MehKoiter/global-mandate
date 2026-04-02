@@ -81,6 +81,10 @@ function terrainForKind(kind: ZoneKind, q: number, r: number): TerrainType {
     case "RADIO_A":
     case "RADIO_B":
       return Math.sin(q * 5.9 + r * 3.1) > 0.4 ? "MOUNTAIN" : noiseToTerrain(q, r);
+    case "COMMAND": {
+      const t = noiseToTerrain(q, r);
+      return t === "WATER" ? "PLAINS" : t;   // FOB zones must be on land
+    }
     default:
       return noiseToTerrain(q, r);
   }

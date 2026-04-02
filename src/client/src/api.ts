@@ -12,6 +12,11 @@ function authHeaders(): HeadersInit {
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/v1${path}`, { ...init, headers: { ...authHeaders(), ...(init?.headers ?? {}) } });
   if (!res.ok) {
+    // Stale token (DB wiped, account deleted) — clear session and reload to login screen
+    if (res.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.location.reload();
+    }
     const body = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }

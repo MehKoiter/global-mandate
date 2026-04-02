@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useState } from "react";
 import type { WsMessage } from "../types.js";
 
 interface Props { alerts: WsMessage[]; }
@@ -59,7 +59,8 @@ function formatDetail(type: string, payload: Record<string, unknown>): string {
 
 const S: Record<string, React.CSSProperties> = {
   section: { padding: "0 20px 16px" },
-  heading: { color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, marginBottom: 8 },
+  heading: { color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" },
+  toggle:  { color: "#555", fontSize: 10 },
   feed: {
     background: "#0d0d0d",
     border: "1px solid #1e1e1e",
@@ -89,18 +90,16 @@ const S: Record<string, React.CSSProperties> = {
 // ── Component ─────────────────────────────────────────────────
 
 export function AlertFeed({ alerts }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [alerts]);
-
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div style={S.section}>
-      <div style={S.heading}>Live Event Feed {alerts.length > 0 && `(${alerts.length})`}</div>
-      <div style={S.feed}>
+      <div style={S.heading} onClick={() => setCollapsed(c => !c)}>
+        <span>Live Event Feed {alerts.length > 0 && `(${alerts.length})`}</span>
+        <span style={S.toggle}>{collapsed ? "▶" : "▼"}</span>
+      </div>
+      {!collapsed && <div style={S.feed}>
         {alerts.length === 0 && <div style={S.empty}>Awaiting events...</div>}
-        {alerts.map((msg, i) => {
+        {[...alerts].reverse().map((msg, i) => {
           const meta   = getMeta(msg.type);
           const ts     = msg.ts ? new Date(msg.ts) : new Date();
           const time   = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -118,8 +117,7 @@ export function AlertFeed({ alerts }: Props) {
             </div>
           );
         })}
-        <div ref={bottomRef} />
-      </div>
+      </div>}
     </div>
   );
 }
