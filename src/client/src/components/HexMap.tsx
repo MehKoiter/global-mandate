@@ -1,11 +1,14 @@
 // =============================================================
 // Global Mandate — PixiJS Hex Map
-// Renders 700 axial hex zones with pan/zoom and click detection.
+// Two-layer rendering:
+//   1. Background terrain layer — fills every hex in world range
+//      (non-interactive, driven by client-side noise)
+//   2. Zone layer — 700 game zones on top with ownership borders
 // =============================================================
 
 import { useEffect, useRef } from "react";
-import { Application, Container, Graphics, Text, TextStyle, Point } from "pixi.js";
-import type { Zone, ZoneVisibility } from "../types.js";
+import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
+import type { Zone, ZoneVisibility, TerrainType } from "../types.js";
 
 // ─── Hex geometry (pointy-top) ────────────────────────────────
 
@@ -27,23 +30,95 @@ function hexCornerPoints(cx: number, cy: number): number[] {
   return pts;
 }
 
-// ─── Color palette ────────────────────────────────────────────
+// ─── Client-side terrain noise (mirrors src/lib/terrainNoise.ts) ──
+// Duplicated here so background hexes need no API call.
 
-const COLORS = {
-  owned:    { fill: 0x1a3a1a, border: 0x2a5a2a },
-  scouted:  { fill: 0x1a1a2a, border: 0x2a2a4a },
-  enemy:    { fill: 0x2a1a1a, border: 0x3a1e1e },
-  dark:     { fill: 0x0e0e0e, border: 0x1a1a1a },
-  fobRing:  0x4caf50,
-  selected: 0xfdd835,
+function elevation(q: number, r: number): number {
+  const x = q * 0.05, y = r * 0.05;
+  return (
+    Math.sin(x * 1.0 + y * 0.8) * 0.4 +
+    Math.sin(x * 2.3 - y * 1.5) * 0.3 +
+    Math.sin(x * 0.7 + y * 2.1) * 0.3
+  ) * 0.5 + 0.5;
+}
+
+function moisture(q: number, r: number): number {
+  const x = q * 0.06 + 100, y = r * 0.06 + 100;
+  return (
+    Math.sin(x * 1.4 + y * 0.6) * 0.4 +
+    Math.sin(x * 0.8 - y * 2.0) * 0.3 +
+    Math.sin(x * 2.5 + y * 1.1) * 0.3
+  ) * 0.5 + 0.5;
+}
+
+function riverFactor(q: number, r: number): number {
+  const x = q * 0.08 + 50, y = r * 0.04 + 50;
+  return Math.abs(Math.sin(x * 1.2 + y * 0.3) * Math.cos(x * 0.4 - y * 1.1));
+}
+
+function noiseToTerrain(q: number, r: number): TerrainType {
+  const elev  = elevation(q, r);
+  const moist = moisture(q, r);
+  const river = riverFactor(q, r);
+  if (river < 0.06 && elev < 0.6) return "WATER";
+  if (elev < 0.25)  return "WATER";
+  if (elev > 0.78)  return "MOUNTAIN";
+  if (moist < 0.25) return "DESERT";
+  if (moist > 0.72) return "FOREST";
+  if (moist > 0.45 && moist < 0.62 && Math.sin(q * 7.3 + r * 11.7) > 0.78) return "URBAN";
+  return "PLAINS";
+}
+
+// ─── Color palettes ───────────────────────────────────────────
+
+// Background hex fills (darker — recede behind zones)
+const BG_FILL: Record<TerrainType, number> = {
+  PLAINS:   0x1c1a10,
+  FOREST:   0x091508,
+  MOUNTAIN: 0x181818,
+  WATER:    0x080f18,
+  DESERT:   0x1e1808,
+  URBAN:    0x10101a,
+};
+
+// Zone hex fills (brighter — stand out above background)
+const ZONE_FILL: Record<TerrainType, number> = {
+  PLAINS:   0x2e2b18,
+  FOREST:   0x122010,
+  MOUNTAIN: 0x252525,
+  WATER:    0x0d1a2a,
+  DESERT:   0x2e2410,
+  URBAN:    0x1a1a2e,
+};
+
+// Ownership border colors
+const BORDER = {
+  owned:    { color: 0x4caf50, width: 1.5 },
+  scouted:  { color: 0x2979ff, width: 1.2 },
+  enemy:    { color: 0xf44336, width: 1.2 },
+  dark:     { color: 0x2a2a2a, width: 0.5 },
+  selected: { color: 0xfdd835, width: 2.0 },
+  fob:      { color: 0x4caf50, width: 2.0 },
 } as const;
 
-function hexColors(zone: Zone): { fill: number; border: number } {
-  if (zone.visibility === "owned")   return COLORS.owned;
-  if (zone.visibility === "scouted") return COLORS.scouted;
-  // dark — but we may know there's an enemy owner
-  if (zone.ownerPlayerId !== null)   return COLORS.enemy;
-  return COLORS.dark;
+// Dim a hex color for fog-of-war zones
+function dimColor(hex: number, factor: number): number {
+  const r = ((hex >> 16) & 0xff) * factor;
+  const g = ((hex >>  8) & 0xff) * factor;
+  const b = ( hex        & 0xff) * factor;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+}
+
+function zoneColors(zone: Zone, selected: boolean, isFob: boolean): { fill: number; borderColor: number; borderWidth: number } {
+  const base = ZONE_FILL[zone.terrainType];
+
+  if (selected) return { fill: base, borderColor: BORDER.selected.color, borderWidth: BORDER.selected.width };
+  if (isFob)    return { fill: base, borderColor: BORDER.fob.color,      borderWidth: BORDER.fob.width };
+
+  if (zone.visibility === "owned")   return { fill: base,             borderColor: BORDER.owned.color,   borderWidth: BORDER.owned.width };
+  if (zone.visibility === "scouted") return { fill: base,             borderColor: BORDER.scouted.color, borderWidth: BORDER.scouted.width };
+  if (zone.ownerPlayerId !== null)   return { fill: dimColor(base, 0.5), borderColor: BORDER.enemy.color, borderWidth: BORDER.enemy.width };
+  return                                    { fill: dimColor(base, 0.4), borderColor: BORDER.dark.color,  borderWidth: BORDER.dark.width };
 }
 
 // ─── Props ────────────────────────────────────────────────────
@@ -58,20 +133,17 @@ interface HexMapProps {
 // ─── Component ────────────────────────────────────────────────
 
 export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps) {
-  const containerRef    = useRef<HTMLDivElement>(null);
-  const appRef          = useRef<Application | null>(null);
-  const worldRef        = useRef<Container | null>(null);
-  // Per-zone Graphics objects for O(1) updates
-  const hexGfxRef       = useRef<Map<string, Graphics>>(new Map());
-  // Stable refs so PixiJS callbacks don't capture stale closures
-  const zonesRef        = useRef<Zone[]>(zones);
-  const onZoneClickRef  = useRef(onZoneClick);
-  const fobZoneIdRef    = useRef(fobZoneId);
-  const selectedIdRef   = useRef<string | null>(null);
-  const isDraggingRef   = useRef(false);
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const appRef         = useRef<Application | null>(null);
+  const worldRef       = useRef<Container | null>(null);
+  const hexGfxRef      = useRef<Map<string, Graphics>>(new Map());
+  const zonesRef       = useRef<Zone[]>(zones);
+  const onZoneClickRef = useRef(onZoneClick);
+  const fobZoneIdRef   = useRef(fobZoneId);
+  const selectedIdRef  = useRef<string | null>(null);
+  const isDraggingRef  = useRef(false);
 
-  // Keep refs in sync with props
-  useEffect(() => { zonesRef.current = zones; }, [zones]);
+  useEffect(() => { zonesRef.current = zones; },       [zones]);
   useEffect(() => { onZoneClickRef.current = onZoneClick; }, [onZoneClick]);
   useEffect(() => { fobZoneIdRef.current = fobZoneId; }, [fobZoneId]);
 
@@ -79,19 +151,21 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
   useEffect(() => {
     if (!containerRef.current) return;
     const el = containerRef.current;
-    let destroyed = false;
+    let destroyed   = false;
+    let initialized = false;
 
     const app = new Application();
     appRef.current = app;
 
     void app.init({
       resizeTo:        el,
-      backgroundColor: 0x0a0a0a,
+      backgroundColor: 0x050505,
       antialias:       false,
       resolution:      window.devicePixelRatio || 1,
       autoDensity:     true,
     }).then(() => {
-      if (destroyed) { app.destroy(true); return; }
+      initialized = true;
+      if (destroyed) { app.destroy(true, { children: true }); return; }
       el.appendChild(app.canvas);
       buildScene(app);
     });
@@ -101,95 +175,113 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
       hexGfxRef.current.clear();
       worldRef.current = null;
       appRef.current   = null;
-      app.destroy(true, { children: true });
+      if (initialized) app.destroy(true, { children: true });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // runs once
+  }, []);
 
-  // ── Recolor hexes when zone data changes ─────────────────────
-  useEffect(() => {
-    const gfxMap = hexGfxRef.current;
-    if (gfxMap.size === 0) return; // scene not built yet
-    for (const zone of zones) {
-      const gfx = gfxMap.get(zone.id);
-      if (gfx) redrawHex(gfx, zone, zone.id === selectedIdRef.current, zone.id === fobZoneIdRef.current);
-    }
-  }, [zones]);
-
-  // ─ FOB ring update when fobZoneId changes ───────────────────
+  // ── Recolor zone hexes when zone data changes ─────────────────
   useEffect(() => {
     const gfxMap = hexGfxRef.current;
     if (gfxMap.size === 0) return;
-    // Redraw all zones to refresh FOB ring
+    for (const zone of zones) {
+      const gfx = gfxMap.get(zone.id);
+      if (gfx) redrawZoneHex(gfx, zone, zone.id === selectedIdRef.current, zone.id === fobZoneIdRef.current);
+    }
+  }, [zones]);
+
+  // ── FOB ring update ───────────────────────────────────────────
+  useEffect(() => {
+    const gfxMap = hexGfxRef.current;
+    if (gfxMap.size === 0) return;
     for (const zone of zonesRef.current) {
       const gfx = gfxMap.get(zone.id);
-      if (gfx) redrawHex(gfx, zone, zone.id === selectedIdRef.current, zone.id === fobZoneId);
+      if (gfx) redrawZoneHex(gfx, zone, zone.id === selectedIdRef.current, zone.id === fobZoneId);
     }
   }, [fobZoneId]);
 
-  // ─── Build the initial PixiJS scene ─────────────────────────
+  // ─── Build scene ─────────────────────────────────────────────
 
   function buildScene(app: Application) {
     const world = new Container();
     worldRef.current = world;
     app.stage.addChild(world);
 
-    // Center view on FOB zone if known, otherwise on world midpoint (q=40, r=40)
-    const fobZone = zonesRef.current.find(z => z.id === fobZoneIdRef.current);
-    const focusQ  = fobZone ? fobZone.q : 40;
-    const focusR  = fobZone ? fobZone.r : 40;
+    const zs = zonesRef.current;
+
+    // Compute world bounds from zone coordinates
+    const minQ = Math.min(...zs.map(z => z.q)) - 2;
+    const maxQ = Math.max(...zs.map(z => z.q)) + 2;
+    const minR = Math.min(...zs.map(z => z.r)) - 2;
+    const maxR = Math.max(...zs.map(z => z.r)) + 2;
+
+    // ── Layer 1: background terrain (non-interactive) ──────────
+    const bgContainer = new Container();
+    world.addChild(bgContainer);
+
+    for (let q = minQ; q <= maxQ; q++) {
+      for (let r = minR; r <= maxR; r++) {
+        const terrain = noiseToTerrain(q, r);
+        const { x, y } = axialToPixel(q, r);
+        const gfx = new Graphics();
+        gfx.poly(hexCornerPoints(x, y))
+           .fill(BG_FILL[terrain])
+           .stroke({ color: 0x000000, width: 0.3 });
+        bgContainer.addChild(gfx);
+      }
+    }
+
+    // ── Layer 2: zone hexes (interactive) ─────────────────────
+    const fobId = fobZoneIdRef.current;
+    for (const zone of zs) {
+      const gfx = new Graphics();
+      gfx.label       = zone.id;
+      gfx.interactive = true;
+      gfx.cursor      = "pointer";
+      redrawZoneHex(gfx, zone, false, zone.id === fobId);
+      world.addChild(gfx);
+      hexGfxRef.current.set(zone.id, gfx);
+    }
+
+    // Center on FOB zone (or world midpoint)
+    const fobZone = zs.find(z => z.id === fobId);
+    const focusQ  = fobZone ? fobZone.q : Math.round((minQ + maxQ) / 2);
+    const focusR  = fobZone ? fobZone.r : Math.round((minR + maxR) / 2);
     const focus   = axialToPixel(focusQ, focusR);
     world.position.set(
       app.screen.width  / 2 - focus.x,
       app.screen.height / 2 - focus.y,
     );
 
-    // Draw all hexes
-    for (const zone of zonesRef.current) {
-      const gfx = createHex(zone);
-      world.addChild(gfx);
-      hexGfxRef.current.set(zone.id, gfx);
-    }
-
     setupInteractivity(app, world);
   }
 
-  // ─── Draw / redraw a single hex Graphics ────────────────────
+  // ─── Draw / redraw a single zone hex ────────────────────────
 
-  function createHex(zone: Zone): Graphics {
-    const gfx = new Graphics();
-    gfx.label = zone.id;
-    redrawHex(gfx, zone, false, zone.id === fobZoneIdRef.current);
-    gfx.interactive = true;
-    gfx.cursor      = "pointer";
-    return gfx;
-  }
-
-  function redrawHex(gfx: Graphics, zone: Zone, selected: boolean, isFob: boolean) {
+  function redrawZoneHex(gfx: Graphics, zone: Zone, selected: boolean, isFob: boolean) {
     const { x, y } = axialToPixel(zone.q, zone.r);
-    const { fill, border } = hexColors(zone);
-    const borderColor = selected ? COLORS.selected : isFob ? COLORS.fobRing : border;
-    const borderWidth = selected || isFob ? 1.5 : 0.5;
+    const { fill, borderColor, borderWidth } = zoneColors(zone, selected, isFob);
 
     gfx.clear();
-    gfx.poly(hexCornerPoints(x, y)).fill(fill).stroke({ color: borderColor, width: borderWidth });
+    gfx.poly(hexCornerPoints(x, y))
+       .fill(fill)
+       .stroke({ color: borderColor, width: borderWidth });
 
-    // Zone name label for visible zones
+    // Zone name label (visible zones only, shown at zoom ≥ 0.6)
     if (zone.visibility !== "dark") {
       const label = new Text({
         text:  zone.name.length > 12 ? zone.name.slice(0, 12) : zone.name,
-        style: new TextStyle({ fontSize: 6, fill: 0x888888, fontFamily: "monospace" }),
+        style: new TextStyle({ fontSize: 6, fill: 0xaaaaaa, fontFamily: "monospace" }),
       });
       label.anchor.set(0.5);
       label.position.set(x, y + HEX_SIZE * 0.52);
-      label.visible = true; // hidden below zoom 0.6 via world scale check in app.ticker
       gfx.addChild(label);
     }
 
     // FOB indicator dot
     if (isFob) {
       const dot = new Graphics();
-      dot.circle(x, y - 4, 3).fill(COLORS.fobRing);
+      dot.circle(x, y - 4, 3).fill(0x4caf50);
       gfx.addChild(dot);
     }
   }
@@ -199,19 +291,20 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
   function setupInteractivity(app: Application, world: Container) {
     let dragStartScreen = { x: 0, y: 0 };
     let dragStartWorld  = { x: 0, y: 0 };
-    let pointerDownPos  = { x: 0, y: 0 };
+    let isPointerDown   = false;
 
     app.stage.interactive = true;
     app.stage.hitArea     = app.screen;
 
     app.stage.on("pointerdown", (e) => {
+      isPointerDown         = true;
       isDraggingRef.current = false;
       dragStartScreen = { x: e.global.x, y: e.global.y };
       dragStartWorld  = { x: world.x, y: world.y };
-      pointerDownPos  = { x: e.global.x, y: e.global.y };
     });
 
     app.stage.on("pointermove", (e) => {
+      if (!isPointerDown) return;
       const dx = e.global.x - dragStartScreen.x;
       const dy = e.global.y - dragStartScreen.y;
       if (!isDraggingRef.current && Math.sqrt(dx * dx + dy * dy) > 5) {
@@ -223,40 +316,38 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
       }
     });
 
-    app.stage.on("pointerup", () => { isDraggingRef.current = false; });
-    app.stage.on("pointerupoutside", () => { isDraggingRef.current = false; });
+    app.stage.on("pointerup",        () => { isPointerDown = false; isDraggingRef.current = false; });
+    app.stage.on("pointerupoutside", () => { isPointerDown = false; isDraggingRef.current = false; });
 
-    // Wire click on each hex via pointerup — fires only if not dragging
+    // Zone click — fires only if not dragging
     for (const [zoneId, gfx] of hexGfxRef.current) {
       const zone = zonesRef.current.find(z => z.id === zoneId);
       if (!zone) continue;
-      gfx.on("pointerup", (e) => {
-        e.stopPropagation();
+      gfx.on("pointerup", () => {
         if (isDraggingRef.current) return;
 
-        // Deselect previous hex
+        // Deselect previous
         if (selectedIdRef.current) {
           const prevGfx  = hexGfxRef.current.get(selectedIdRef.current);
           const prevZone = zonesRef.current.find(z => z.id === selectedIdRef.current);
           if (prevGfx && prevZone) {
-            redrawHex(prevGfx, prevZone, false, prevZone.id === fobZoneIdRef.current);
+            redrawZoneHex(prevGfx, prevZone, false, prevZone.id === fobZoneIdRef.current);
           }
         }
 
-        // Select this hex
         selectedIdRef.current = zone.id;
-        redrawHex(gfx, zone, true, zone.id === fobZoneIdRef.current);
+        redrawZoneHex(gfx, zone, true, zone.id === fobZoneIdRef.current);
         onZoneClickRef.current(zone);
       });
     }
 
-    // Zoom toward cursor on scroll
+    // Zoom toward cursor
     app.canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const factor   = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       const newScale = Math.max(0.25, Math.min(5.0, world.scale.x * factor));
 
-      const worldPos    = world.toLocal(new Point(e.offsetX, e.offsetY));
+      const worldPos     = world.toLocal({ x: e.offsetX, y: e.offsetY });
       world.scale.set(newScale);
       const newScreenPos = world.toGlobal(worldPos);
       world.x += e.offsetX - newScreenPos.x;
@@ -275,7 +366,7 @@ export function HexMap({ zones, playerId, fobZoneId, onZoneClick }: HexMapProps)
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", overflow: "hidden", background: "#0a0a0a" }}
+      style={{ width: "100%", height: "100%", overflow: "hidden", background: "#050505" }}
     />
   );
 }

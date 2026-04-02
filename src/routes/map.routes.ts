@@ -27,6 +27,7 @@ export async function mapRoutes(fastify: FastifyInstance) {
             bridgeDestroyed: true,
             isConnected:    true,
             capturedAt:     true,
+            terrainType:    true,
             // Only expose yield to the owner
             fuelPerHour:    true,
             rationsPerHour: true,
