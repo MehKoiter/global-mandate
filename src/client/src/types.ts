@@ -52,6 +52,7 @@ export interface WsMessage {
 // ─── Map Types ─────────────────────────────────────────────────
 
 export type ZoneVisibility = "owned" | "scouted" | "dark";
+export type TerrainType    = "PLAINS" | "FOREST" | "MOUNTAIN" | "WATER" | "DESERT" | "URBAN";
 
 export interface ZoneUnit {
   id:        string;
@@ -74,6 +75,7 @@ export interface Zone {
   bridgeDestroyed:    boolean;
   isConnected:        boolean;
   capturedAt:         string | null;
+  terrainType:        TerrainType;
   fuelPerHour:        number | null;
   rationsPerHour:     number | null;
   steelPerHour:       number | null;

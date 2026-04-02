@@ -10,6 +10,15 @@ datasource db {
 // Enums
 // ──────────────────────────────────────────────
 
+enum TerrainType {
+  PLAINS
+  FOREST
+  MOUNTAIN
+  WATER
+  DESERT
+  URBAN
+}
+
 enum BuildingType {
   COMMAND_CENTER
   COMM_CENTER
@@ -103,6 +112,7 @@ model Zone {
   creditsPerHour      Int       @default(0)
   hasRoad             Boolean   @default(false)
   bridgeDestroyed     Boolean   @default(false)
+  terrainType         TerrainType @default(PLAINS)
 
   // Signal Chain — broken chain yields 50% resources
   isConnected        Boolean @default(true)

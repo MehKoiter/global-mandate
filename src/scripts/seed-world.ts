@@ -16,7 +16,9 @@
 // Run: npx tsx src/scripts/seed-world.ts
 // =============================================================
 
-import { prisma } from "../lib/prisma.js";
+import { prisma }         from "../lib/prisma.js";
+import { noiseToTerrain } from "../lib/terrainNoise.js";
+import type { TerrainType } from "../lib/terrainNoise.js";
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -68,6 +70,20 @@ interface ZoneYields {
   rationsPerHour: number;
   steelPerHour:   number;
   creditsPerHour: number;
+}
+
+function terrainForKind(kind: ZoneKind, q: number, r: number): TerrainType {
+  switch (kind) {
+    case "SUPPLY_FARM":
+      return Math.sin(q * 3.7 + r * 5.3) > 0.3 ? "PLAINS" : "FOREST";
+    case "SUPPLY_WELL":
+      return Math.sin(q * 4.1 + r * 6.7) > -0.3 ? "DESERT" : "PLAINS";
+    case "RADIO_A":
+    case "RADIO_B":
+      return Math.sin(q * 5.9 + r * 3.1) > 0.4 ? "MOUNTAIN" : noiseToTerrain(q, r);
+    default:
+      return noiseToTerrain(q, r);
+  }
 }
 
 function zoneYields(kind: ZoneKind): ZoneYields {
@@ -146,6 +162,7 @@ async function seed() {
               q:              centreQ + dq,
               r:              centreR + dr,
               isConnected:    true,
+              terrainType:    terrainForKind(kind, centreQ + dq, centreR + dr),
               ...zoneYields(kind),
             })),
           },
